@@ -1066,7 +1066,6 @@ function dealNewHand(room) {
         winnerShown = false;
         return db.ref('rooms/'+roomCode).update({status:'playing'});
       });
-  });
 }
 
 // ── Enter Game Screen ─────────────────────────────────────────
