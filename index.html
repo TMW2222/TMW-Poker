@@ -532,7 +532,7 @@ var gs = null;          // latest Firebase snapshot value
 var botTimer = null;
 var botLock = false;
 var handLock = false;   // prevents concurrent hand advancement on host
-var winnerShown = false;
+var winnerHandId = '';   // set to dealerId+dealerSeat when winner screen shows; empty = not showing
 var winnerTimer = null;
 var pendingHostTransferIds = []; // queue of player ids to offer host to
 var pendingRebuyId = null;       // player currently requesting rebuy
@@ -1081,13 +1081,15 @@ function dealNewHand(room) {
     lastAnimatedBets = {};
     renderedHandId = '';
     window._oppHandId = undefined;
+    window._prevCommKey = '';
+    window._prevCommRev = 0;
+    window._lastTurnKey = '';
     handLock = false;
     botLock = false;
 
-    // Clear winnerShown BEFORE writing to Firebase
-    winnerShown = false;
-
     // Post first log entry before cards are dealt
+    // NOTE: winnerHandId is cleared in the final .then() AFTER Firebase write
+    // so render() stays blocked until new game state is fully written
     var sbName2 = sbP.name, bbName2 = bbP.name;
     var sbAmt2 = sbAmt, bbAmt2 = bbAmt;
     var firstPlayer = ps[actionOrder.indexOf(actionOrder[0]) >= 0 ? 0 : 0];
@@ -1103,6 +1105,9 @@ function dealNewHand(room) {
     db.ref().update(ups)
       .then(function(){ return db.ref('rooms/'+roomCode+'/game').set(game); })
       .then(function(){
+        // Clear winner guard AFTER new game state is written
+        // render() will now unblock on the next Firebase listener fire
+        winnerHandId = '';
         return db.ref('rooms/'+roomCode).update({
           status: 'playing',
           actionLog: [sbName2 + ' posts ' + sbAmt2]
@@ -1130,7 +1135,7 @@ function enterGame() {
 // ── RENDER ────────────────────────────────────────────────────
 function render() {
   if (!gs||!gs.game) return;
-  if (winnerShown) return;
+  if (winnerHandId) return;
   var g = gs.game;
   var ps = getPlayers();
   var settings = gs.settings;
@@ -1166,11 +1171,17 @@ function render() {
 
 
   if (g.stage === 'complete') {
-    // Always disable action buttons when hand is over
     el('bFold').disabled = true;
     el('bCall').disabled = true;
     el('bBet').disabled  = true;
-    if (!winnerShown && g.winner) showWinner(g.winner, g);
+    var thisHandId = (g.dealerId||'') + '-' + (g.dealerSeat||'');
+    if (!winnerHandId && g.winner) {
+      // Set BEFORE showWinner so any concurrent render() hits the guard
+      winnerHandId = thisHandId;
+      // Tiny defer so current render() stack unwinds before winner screen
+      var wCopy = g.winner, gCopy = g;
+      setTimeout(function(){ showWinner(wCopy, gCopy); }, 0);
+    }
   }
 
   checkRebuyBanner();
@@ -1195,16 +1206,34 @@ function render() {
 }
 
 function renderComm(g) {
-  var rev = g.communityRevealed||0;
-  var handId = g.dealerId+'-'+g.dealerSeat+'-'+g.stage;
-  var isNew = (renderedHandId !== handId);
+  var rev     = g.communityRevealed || 0;
+  var handKey = g.dealerId + '-' + g.dealerSeat;
+  var prevRev = window._prevCommRev || 0;
+  var prevKey = window._prevCommKey || '';
+
+  // New hand entirely — reset tracking
+  if (handKey !== prevKey) {
+    window._prevCommKey = handKey;
+    window._prevCommRev = 0;
+    prevRev = 0;
+  }
+
+  // Only rebuild if revealed count changed
+  if (rev === prevRev && prevKey === handKey && el('commCards').children.length === 5) return;
+
   var html = '';
   for (var i = 0; i < 5; i++) {
-    if (i<rev) html += cardHTML(g.community[i],'cm',isNew?'deal-comm':'',(isNew?i*0.2:0));
-    else html += cardPhHTML('cm');
+    if (i < rev) {
+      // Only animate cards that were just revealed (index >= prevRev)
+      var isNewCard = (i >= prevRev);
+      var delay = isNewCard ? (i - prevRev) * 0.22 : 0;
+      html += cardHTML(g.community[i], 'cm', isNewCard ? 'deal-comm' : '', delay);
+    } else {
+      html += cardPhHTML('cm');
+    }
   }
   el('commCards').innerHTML = html;
-  if (isNew) renderedHandId = handId;
+  window._prevCommRev = rev;
 }
 
 function renderMySeat(g, ps, settings) {
@@ -1902,7 +1931,7 @@ function doAward(winnerId, g, ps, sc, showdownPlayers) {
 
 // ── Winner Display ────────────────────────────────────────────
 function showWinner(w, g) {
-  winnerShown = true;
+  // winnerHandId already set by render() before calling showWinner
   if (turnTimer) { clearTimeout(turnTimer); turnTimer=null; }
 
   el('wName').textContent  = w.name;
@@ -1960,6 +1989,7 @@ function showWinner(w, g) {
 function dismissWinner() {
   if (winnerTimer) { clearTimeout(winnerTimer); winnerTimer=null; }
   hide('sWinner');
+  // winnerHandId stays set — render() stays blocked until new hand writes
   checkGameOver();
 }
 
@@ -1981,8 +2011,8 @@ function checkGameOver() {
     // Small delay so winner animation completes before dealing
     setTimeout(function(){ initHand(); }, 1200);
   }
-  // Non-host: winnerShown cleared in dealNewHand before Firebase write,
-  // so render() will fire correctly when new game state arrives
+  // Non-host: winnerHandId cleared in dealNewHand final .then() after
+  // Firebase write, so render() unblocks correctly when new state arrives
 }
 
 // ── Bot Scheduling ─────────────────────────────────────────────
@@ -2138,14 +2168,19 @@ function doAddChips() {
 function hNextHand() {
   if (winnerTimer) { clearTimeout(winnerTimer); winnerTimer=null; }
   if (turnTimer)   { clearTimeout(turnTimer);   turnTimer=null; }
-  if (urgentTimer) { clearTimeout(urgentTimer); urgentTimer=null; }
   hide('sWinner'); hide('sGameOver');
   lastAnimatedBets = {};
   renderedHandId = '';
   window._oppHandId = undefined;
+  window._lastTurnKey = '';
+  window._prevCommKey = '';
+  window._prevCommRev = 0;
+  winnerHandId = '';
   handLock = false;
   gamePaused = false;
   el('btnPause').textContent = 'Pause';
+  el('btnPause').style.background = '';
+  el('btnPause').style.color = '';
   initHand();
 }
 
