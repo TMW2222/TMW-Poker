@@ -788,7 +788,8 @@ function animatePotToWinner(winnerId) {
   for (var i = 0; i < 3; i++) flyChip(potEl, toEl, 'c100', i * 0.08);
 }
 
-// Detect bet changes since last render and animate chips to bet zone
+// Detect bet changes since last render and animate chips to bet zone.
+// Must be called BEFORE renderSeats rebuilds the DOM so source elements exist.
 function detectAndAnimateBets(g, players) {
   var bets = safeObj(g.bets);
   for (var i = 0; i < players.length; i++) {
@@ -804,7 +805,12 @@ function detectAndAnimateBets(g, players) {
         fromEl = el('stack-' + p.id);
         toEl   = el('bz-' + p.id);
       }
-      if (fromEl && toEl) flyChip(fromEl, toEl, chipColor(cur - prev), 0);
+      // Use requestAnimationFrame so freshly-inserted elements have layout
+      if (fromEl && toEl) {
+        (function(fe, te, cc) {
+          requestAnimationFrame(function() { flyChip(fe, te, cc, 0); });
+        })(fromEl, toEl, chipColor(cur - prev));
+      }
     }
     lastAnimatedBets[p.id] = cur;
   }
@@ -1104,15 +1110,22 @@ function render() {
     spRow.textContent = spTxt;
   } else { spRow.textContent = ''; }
 
+  // Detect bet changes FIRST — before renderSeats rebuilds DOM elements
+  detectAndAnimateBets(g, ps);
+
   renderComm(g);
   renderMySeat(g, ps, settings);
   renderSeats(g, ps);
   renderControls(g, ps, settings);
-  detectAndAnimateBets(g, ps);
 
-  if (g.stage==='complete'&&g.winner&&!winnerShown) showWinner(g.winner, g);
+  // Lift suppressRender when a genuinely new hand has arrived
+  if (suppressRender && g.stage !== 'complete') {
+    var newHandId = g.dealerId + '-' + g.dealerSeat;
+    if (renderedHandId === newHandId) suppressRender = false;
+  }
 
-  // Rebuy banner for busted local player
+  if (g.stage==='complete' && g.winner && !winnerShown) showWinner(g.winner, g);
+
   checkRebuyBanner();
 }
 
@@ -1383,222 +1396,308 @@ function setPreset(type) {
 }
 
 // ── Host: Apply Action ────────────────────────────────────────
-// This is the authoritative action processor. Only runs on host.
+// Single authoritative action processor. Only runs on host.
+// All state changes flow through here. Never call advanceHand directly
+// from outside this function.
 function applyAction(pid, action) {
   if (!isHost) return;
+  // Re-fetch fresh state — never trust gs snapshot for writes
   db.ref('rooms/'+roomCode).once('value').then(function(snap) {
     if (!snap.exists()) return;
     var room = snap.val();
     var g = room.game;
-    if (!g||g.stage==='complete') return;
-    var ao = g.actionOrder||[];
-    var curId = ao[g.actionIdx];
+    if (!g || g.stage === 'complete') return;
 
-    // Validate it's this player's turn (except fold which is always allowed)
-    if (action.type!=='fold'&&curId!==pid) return;
-    var folded = safeObj(g.folded);
-    var allIn  = safeObj(g.allIn);
-    if (folded[pid]||allIn[pid]) return;
+    var ao      = g.actionOrder || [];
+    var curId   = ao[g.actionIdx];
+    var folded  = safeObj(g.folded);
+    var allIn   = safeObj(g.allIn);
 
-    var player = (room.players||{})[pid];
+    // Validate turn ownership (fold is always allowed for the player in hand)
+    if (action.type !== 'fold' && curId !== pid) return;
+    if (folded[pid] || allIn[pid]) return;
+
+    var player = (room.players || {})[pid];
     if (!player) return;
 
-    var ups = {};
-    var myBet = safeObj(g.bets)[pid]||0;
-    var toCall = Math.max(0,(g.currentBet||0)-myBet);
-    var bb = room.settings.bigBlind||50;
+    var myBet  = safeObj(g.bets)[pid] || 0;
+    var toCall = Math.max(0, (g.currentBet || 0) - myBet);
+    var bb     = room.settings.bigBlind || 50;
+    var ups    = {};
 
-    if (action.type==='fold') {
+    if (action.type === 'fold') {
       ups['rooms/'+roomCode+'/game/folded/'+pid] = true;
-      db.ref().update(ups).then(function() {
-        if (curId===pid) advanceHand(pid);
-      });
-
-    } else if (action.type==='call') {
-      var callAmt = Math.min(toCall,player.chips);
-      if (callAmt>0) {
-        ups['rooms/'+roomCode+'/game/bets/'+pid] = myBet+callAmt;
-        ups['rooms/'+roomCode+'/game/pot'] = (g.pot||0)+callAmt;
-        ups['rooms/'+roomCode+'/players/'+pid+'/chips'] = player.chips-callAmt;
-        if (player.chips-callAmt===0) ups['rooms/'+roomCode+'/game/allIn/'+pid]=true;
+      // If folding out of turn, just mark folded — do not advance
+      // If it is their turn, advance after marking fold
+      if (curId === pid) {
+        db.ref().update(ups).then(function() { advanceHand(room, pid); });
+      } else {
+        db.ref().update(ups);
       }
-      db.ref().update(ups).then(function(){ advanceHand(pid); });
 
-    } else if (action.type==='bet') {
-      var total = action.amount||0;
-      var add = Math.min(total-myBet, player.chips);
-      if (add<=0) { advanceHand(pid); return; }
-      var newBet = myBet+add;
-      var newChips = player.chips-add;
-      var isRaise = newBet>(g.currentBet||0);
-      // Validate min raise
-      var minRaise = (g.currentBet||0)>0?Math.max((g.currentBet||0)*2,myBet+toCall+bb):bb;
-      if (isRaise&&newBet<minRaise&&newChips>0) {
-        // Under min raise and not all-in — reject, don't advance
-        return;
+    } else if (action.type === 'call') {
+      var callAmt = Math.min(toCall, player.chips);
+      if (callAmt > 0) {
+        ups['rooms/'+roomCode+'/game/bets/'+pid]          = myBet + callAmt;
+        ups['rooms/'+roomCode+'/game/pot']                = (g.pot || 0) + callAmt;
+        ups['rooms/'+roomCode+'/players/'+pid+'/chips']   = player.chips - callAmt;
+        if (player.chips - callAmt === 0)
+          ups['rooms/'+roomCode+'/game/allIn/'+pid] = true;
       }
-      ups['rooms/'+roomCode+'/game/bets/'+pid] = newBet;
-      ups['rooms/'+roomCode+'/game/pot'] = (g.pot||0)+add;
-      ups['rooms/'+roomCode+'/players/'+pid+'/chips'] = newChips;
+      db.ref().update(ups).then(function() { advanceHand(room, pid); });
+
+    } else if (action.type === 'bet') {
+      var total    = action.amount || 0;
+      var add      = Math.min(total - myBet, player.chips);
+      if (add <= 0) { advanceHand(room, pid); return; }
+
+      var newBet   = myBet + add;
+      var newChips = player.chips - add;
+      var isRaise  = newBet > (g.currentBet || 0);
+
+      // Enforce minimum raise (unless going all-in for less)
+      if (isRaise && newChips > 0) {
+        var minRaise = Math.max((g.currentBet || 0) * 2, myBet + toCall + bb);
+        if (newBet < minRaise) return; // silently reject under-min raise
+      }
+
+      ups['rooms/'+roomCode+'/game/bets/'+pid]         = newBet;
+      ups['rooms/'+roomCode+'/game/pot']               = (g.pot || 0) + add;
+      ups['rooms/'+roomCode+'/players/'+pid+'/chips']  = newChips;
+      if (newChips === 0)
+        ups['rooms/'+roomCode+'/game/allIn/'+pid] = true;
+
       if (isRaise) {
-        ups['rooms/'+roomCode+'/game/currentBet'] = newBet;
-        ups['rooms/'+roomCode+'/game/lastRaiser'] = pid;
-        ups['rooms/'+roomCode+'/game/actedThisRound'] = {};
+        // On a raise: reset actedThisRound and set actionIdx to the player
+        // immediately after the raiser so everyone must respond.
+        var raiserIdx = ao.indexOf(pid);
+        var nextIdx   = (raiserIdx + 1) % ao.length;
+        var safety    = 0;
+        while ((folded[ao[nextIdx]] || allIn[ao[nextIdx]]) && safety < ao.length) {
+          nextIdx = (nextIdx + 1) % ao.length;
+          safety++;
+        }
+        ups['rooms/'+roomCode+'/game/currentBet']       = newBet;
+        ups['rooms/'+roomCode+'/game/lastRaiser']       = pid;
+        ups['rooms/'+roomCode+'/game/actedThisRound']   = {};
+        ups['rooms/'+roomCode+'/game/actionIdx']        = nextIdx;
+        // Write all at once — advanceHand not needed, actionIdx already set
+        db.ref().update(ups);
+      } else {
+        db.ref().update(ups).then(function() { advanceHand(room, pid); });
       }
-      if (newChips===0) ups['rooms/'+roomCode+'/game/allIn/'+pid]=true;
-      db.ref().update(ups).then(function(){ advanceHand(pid); });
     }
   });
 }
 
 // ── Hand Advancement (host only) ─────────────────────────────
-function advanceHand(actingPid) {
-  if (!isHost||handLock) return;
+// Takes a fresh room snapshot — no re-fetch needed, no stale data.
+// actingPid: the player who just acted (null if auto-advancing all-ins).
+function advanceHand(room, actingPid) {
+  if (!isHost) return;
+  if (handLock) return;
   handLock = true;
-  // Safety valve: if handLock never clears in 8s, release it
   if (handLockTimer) clearTimeout(handLockTimer);
-  handLockTimer = setTimeout(function() { handLock=false; handLockTimer=null; }, 8000);
-  db.ref('rooms/'+roomCode).once('value').then(function(snap) {
-    if (!snap.exists()) { handLock=false; return; }
-    var room = snap.val();
-    var g = room.game;
-    if (!g||g.stage==='complete') { handLock=false; return; }
+  // Safety: auto-release lock after 8s to prevent permanent freeze
+  handLockTimer = setTimeout(function() {
+    handLock = false;
+    handLockTimer = null;
+  }, 8000);
 
-    var folded  = safeObj(g.folded);
-    var allIn   = safeObj(g.allIn);
-    var bets    = safeObj(g.bets);
-    var ao      = g.actionOrder||[];
+  var g       = room.game;
+  var folded  = safeObj(g.folded);
+  var allIn   = safeObj(g.allIn);
+  var bets    = safeObj(g.bets);
+  var ao      = g.actionOrder || [];
 
-    // Mark acted
-    var acted = safeObj(g.actedThisRound);
-    if (actingPid) acted[actingPid] = true;
+  // Mark the acting player as having acted this round
+  var acted = safeObj(g.actedThisRound);
+  if (actingPid) acted[actingPid] = true;
 
-    var active = [];
-    for (var i = 0; i < ao.length; i++) { if (!folded[ao[i]]) active.push(ao[i]); }
-    var canAct = [];
-    for (var i = 0; i < active.length; i++) { if (!allIn[active[i]]) canAct.push(active[i]); }
+  // Build active (not folded) and canAct (not folded, not all-in) lists
+  var active = [];
+  for (var i = 0; i < ao.length; i++) {
+    if (!folded[ao[i]]) active.push(ao[i]);
+  }
+  var canAct = [];
+  for (var i = 0; i < active.length; i++) {
+    if (!allIn[active[i]]) canAct.push(active[i]);
+  }
 
-    var roundOver = false;
-    if (active.length<=1) {
-      roundOver = true;
-    } else if (canAct.length===0) {
-      roundOver = true;
-    } else {
-      var maxBet = 0;
-      var bkeys = Object.keys(bets);
-      for (var i = 0; i < bkeys.length; i++) { var bv=bets[bkeys[i]]; if (typeof bv==='number'&&bv>maxBet) maxBet=bv; }
-      var allActed = true;
-      for (var i = 0; i < canAct.length; i++) { if (!acted[canAct[i]]) { allActed=false; break; } }
-      var allCalled = true;
-      for (var i = 0; i < canAct.length; i++) { if ((bets[canAct[i]]||0)<maxBet&&!allIn[canAct[i]]) { allCalled=false; break; } }
-      if (allActed&&allCalled) roundOver = true;
+  // Determine if the betting round is over
+  var roundOver = false;
+  if (active.length <= 1) {
+    roundOver = true;
+  } else if (canAct.length === 0) {
+    // Everyone is all-in — run out the board
+    roundOver = true;
+  } else {
+    var maxBet = 0;
+    var bkeys  = Object.keys(bets);
+    for (var i = 0; i < bkeys.length; i++) {
+      if (typeof bets[bkeys[i]] === 'number' && bets[bkeys[i]] > maxBet)
+        maxBet = bets[bkeys[i]];
     }
+    var allActed  = true;
+    var allCalled = true;
+    for (var i = 0; i < canAct.length; i++) {
+      if (!acted[canAct[i]])              allActed  = false;
+      if ((bets[canAct[i]] || 0) < maxBet) allCalled = false;
+    }
+    if (allActed && allCalled) roundOver = true;
+  }
 
-    if (roundOver) {
-      // Animate chips to pot before transitioning
-      var ps = [];
-      var pkeys = Object.keys(room.players||{});
-      for (var i = 0; i < pkeys.length; i++) ps.push(room.players[pkeys[i]]);
-      animateCollectBets(ps, g);
-      setTimeout(function(){
-        doStageTransition(g, active, room);
+  if (roundOver) {
+    // Animate bets sliding to pot, then transition to next street
+    var ps = [];
+    var pkeys = Object.keys(room.players || {});
+    for (var i = 0; i < pkeys.length; i++) ps.push(room.players[pkeys[i]]);
+    animateCollectBets(ps, g);
+    // Re-fetch room after animation delay so doStageTransition has fresh data
+    setTimeout(function() {
+      db.ref('rooms/'+roomCode).once('value').then(function(snap2) {
         handLock = false;
-      }, 550);
-    } else {
-      // Advance to next player
-      var ni = (g.actionIdx+1)%ao.length;
-      var safety = 0;
-      while ((folded[ao[ni]]||allIn[ao[ni]])&&safety<ao.length) { ni=(ni+1)%ao.length; safety++; }
-      db.ref('rooms/'+roomCode+'/game').update({actionIdx:ni,actedThisRound:acted}).then(function(){
-        handLock = false;
+        if (!snap2.exists()) return;
+        var room2 = snap2.val();
+        var g2    = room2.game;
+        if (!g2 || g2.stage === 'complete') return;
+        var active2 = [];
+        var ao2 = g2.actionOrder || [];
+        var folded2 = safeObj(g2.folded);
+        for (var i = 0; i < ao2.length; i++) {
+          if (!folded2[ao2[i]]) active2.push(ao2[i]);
+        }
+        doStageTransition(g2, active2, room2);
       });
+    }, 550);
+  } else {
+    // Advance actionIdx to next player who can act
+    var ni     = (g.actionIdx + 1) % ao.length;
+    var safety = 0;
+    while ((folded[ao[ni]] || allIn[ao[ni]]) && safety < ao.length) {
+      ni = (ni + 1) % ao.length;
+      safety++;
     }
-  });
+    db.ref('rooms/'+roomCode+'/game').update({
+      actionIdx:      ni,
+      actedThisRound: acted
+    }).then(function() {
+      handLock = false;
+    });
+  }
 }
 
 // ── Stage Transitions ─────────────────────────────────────────
 function doStageTransition(g, active, room) {
   var stages = ['preflop','flop','turn','river'];
-  var si = stages.indexOf(g.stage);
+  var si     = stages.indexOf(g.stage);
+
   var ps = [];
-  var pkeys = Object.keys(room.players||{});
+  var pkeys = Object.keys(room.players || {});
   for (var i = 0; i < pkeys.length; i++) ps.push(room.players[pkeys[i]]);
-  ps.sort(function(a,b){return a.seat-b.seat;});
+  ps.sort(function(a,b) { return a.seat - b.seat; });
 
-  // Only one active player left — they win
-  if (active.length===1) { doAward(active[0],g,ps,null,null); return; }
-  // River done — go to showdown
-  if (si>=3) { doShowdown(g,active,ps); return; }
+  // Only one player left — award immediately
+  if (active.length === 1) {
+    setTimeout(function() { doAward(active[0], g, ps, null, null); }, 600);
+    return;
+  }
 
-  var next = stages[si+1];
-  var rev  = next==='flop'?3:next==='turn'?4:5;
+  // River complete — go to showdown
+  if (si >= 3) {
+    doShowdown(g, active, ps);
+    return;
+  }
 
-  var newBets = {};
-  for (var i = 0; i < (g.actionOrder||[]).length; i++) newBets[g.actionOrder[i]]=0;
+  var next = stages[si + 1];
+  var rev  = next === 'flop' ? 3 : next === 'turn' ? 4 : 5;
 
   // Post-flop action starts left of dealer
   var dealerSeat = g.dealerSeat;
   var afterD = [], beforeD = [];
   for (var i = 0; i < ps.length; i++) {
-    if (active.indexOf(ps[i].id)<0) continue;
-    if (ps[i].seat>dealerSeat) afterD.push(ps[i].id);
-    else beforeD.push(ps[i].id);
+    if (active.indexOf(ps[i].id) < 0) continue;
+    if (ps[i].seat > dealerSeat) afterD.push(ps[i].id);
+    else                         beforeD.push(ps[i].id);
   }
   var fullOrder = afterD.concat(beforeD);
 
+  // Reset bets for new street
+  var newBets = {};
+  for (var i = 0; i < fullOrder.length; i++) newBets[fullOrder[i]] = 0;
   lastAnimatedBets = {};
 
   db.ref('rooms/'+roomCode+'/game').update({
-    stage:next, communityRevealed:rev,
-    bets:newBets, currentBet:0,
-    actionOrder:fullOrder, actionIdx:0,
-    lastRaiser:null, actedThisRound:{}
-  }).then(function(){
-    // If all remaining can't act (all-in), auto-advance
+    stage:           next,
+    communityRevealed: rev,
+    bets:            newBets,
+    currentBet:      0,
+    actionOrder:     fullOrder,
+    actionIdx:       0,
+    lastRaiser:      null,
+    actedThisRound:  {}
+  }).then(function() {
+    // If everyone remaining is all-in, auto-advance through streets
     var allIn = safeObj(g.allIn);
     var canAct = [];
-    for (var i = 0; i < fullOrder.length; i++) { if (!allIn[fullOrder[i]]) canAct.push(fullOrder[i]); }
-    if (canAct.length===0) setTimeout(function(){ advanceHand(null); },1200);
+    for (var i = 0; i < fullOrder.length; i++) {
+      if (!allIn[fullOrder[i]]) canAct.push(fullOrder[i]);
+    }
+    if (canAct.length === 0) {
+      setTimeout(function() {
+        db.ref('rooms/'+roomCode).once('value').then(function(snap) {
+          if (!snap.exists()) return;
+          var r2 = snap.val();
+          var g2 = r2.game;
+          if (!g2 || g2.stage === 'complete') return;
+          var active2 = [];
+          var ao2 = g2.actionOrder || [];
+          var folded2 = safeObj(g2.folded);
+          for (var i = 0; i < ao2.length; i++) {
+            if (!folded2[ao2[i]]) active2.push(ao2[i]);
+          }
+          doStageTransition(g2, active2, r2);
+        });
+      }, 1200);
+    }
   });
 }
 
 // ── Side Pot Calculation ──────────────────────────────────────
+// Contributions are computed from current bets in the game object
+// (not from startChips, which are unreliable due to blind deduction order).
 function calcSidePots(g, activePids, roomPlayers) {
-  // Build contributions: effective bet each player put in (from hand start)
-  var bets = safeObj(g.bets);
-  var startC = safeObj(g.startChips);
-  var allIn = safeObj(g.allIn);
+  var bets   = safeObj(g.bets);
   var folded = safeObj(g.folded);
 
-  // Total committed by each player = startChips - currentChips
+  // Total committed by each player this hand = their bet in g.bets
+  // For all-in players this is their full committed amount.
   var contributions = {};
-  var pkeys = Object.keys(roomPlayers||{});
-  for (var i = 0; i < pkeys.length; i++) {
-    var p = roomPlayers[pkeys[i]];
-    var start = startC[p.id]||p.chips;
-    contributions[p.id] = start - p.chips;
+  var allPids = Object.keys(roomPlayers || {});
+  for (var i = 0; i < allPids.length; i++) {
+    contributions[allPids[i]] = bets[allPids[i]] || 0;
   }
 
-  // Sort active players by contribution ascending (to calculate main/side pots)
+  // Sort active players by contribution ascending
   var active = activePids.slice();
-  active.sort(function(a,b){ return (contributions[a]||0)-(contributions[b]||0); });
+  active.sort(function(a,b) { return (contributions[a]||0) - (contributions[b]||0); });
 
   var pots = [];
   var prev = 0;
   for (var i = 0; i < active.length; i++) {
-    var pid = active[i];
-    var level = contributions[pid]||0;
-    if (level<=prev) continue;
-    var amount = 0;
+    var pid   = active[i];
+    var level = contributions[pid] || 0;
+    if (level <= prev) continue;
+    var amount   = 0;
     var eligible = [];
-    var allPids = Object.keys(contributions);
     for (var j = 0; j < allPids.length; j++) {
-      var contrib = contributions[allPids[j]];
-      var take = Math.min(contrib,level)-prev;
-      if (take>0) amount += take;
-      if (!safeObj(folded)[allPids[j]]&&contrib>=level) eligible.push(allPids[j]);
+      var apid   = allPids[j];
+      var contrib = contributions[apid] || 0;
+      var take   = Math.min(contrib, level) - prev;
+      if (take > 0) amount += take;
+      if (!folded[apid] && contrib >= level) eligible.push(apid);
     }
-    if (amount>0) pots.push({amount:amount,eligible:eligible});
+    if (amount > 0) pots.push({amount: amount, eligible: eligible});
     prev = level;
   }
   return pots;
@@ -1606,270 +1705,312 @@ function calcSidePots(g, activePids, roomPlayers) {
 
 // ── Showdown ──────────────────────────────────────────────────
 function doShowdown(g, active, ps) {
-  var comm = (g.community||[]).slice(0,5);
-  var allIn = safeObj(g.allIn);
-  var folded = safeObj(g.folded);
+  var comm   = (g.community || []).slice(0, 5);
+  var allIn  = safeObj(g.allIn);
 
-  // Build room players object for side pot calc
   var roomPlayers = {};
   for (var i = 0; i < ps.length; i++) roomPlayers[ps[i].id] = ps[i];
 
-  // Check if any all-ins — use side pots if so
+  // Use side pots when any active player is all-in
   var hasAllIn = false;
-  for (var i = 0; i < active.length; i++) { if (allIn[active[i]]) { hasAllIn=true; break; } }
-
-  var pots;
-  if (hasAllIn) {
-    pots = calcSidePots(g, active, roomPlayers);
-  } else {
-    pots = [{amount:g.pot||0, eligible:active}];
+  for (var i = 0; i < active.length; i++) {
+    if (allIn[active[i]]) { hasAllIn = true; break; }
   }
+  var pots = hasAllIn
+    ? calcSidePots(g, active, roomPlayers)
+    : [{amount: g.pot || 0, eligible: active}];
 
-  // Evaluate hands
+  // Evaluate each player's best hand
   var hands = {};
   var showdownPlayers = [];
   for (var i = 0; i < active.length; i++) {
-    var pid = active[i];
+    var pid  = active[i];
     var hand = safeObj(g.hands)[pid];
     if (!hand) continue;
     var sc = evalHand(hand.concat(comm));
     hands[pid] = sc;
     var p = null;
-    for (var j = 0; j < ps.length; j++) { if (ps[j].id===pid) { p=ps[j]; break; } }
-    showdownPlayers.push({id:pid,name:p?p.name:pid,hand:hand,rank:sc.name,score:sc});
+    for (var j = 0; j < ps.length; j++) { if (ps[j].id === pid) { p = ps[j]; break; } }
+    showdownPlayers.push({id:pid, name:p?p.name:pid, hand:hand, rank:sc.name, score:sc});
   }
 
-  // Award each pot
+  // Award each pot to its winner(s)
   var ups = {};
-  var primaryWinnerId = null, primaryHand = null;
+  var primaryWinnerId = null;
+  var primaryHand     = null;
 
   for (var pi = 0; pi < pots.length; pi++) {
-    var pot = pots[pi];
-    var elig = pot.eligible;
-    var best = null, winners = [];
+    var pot   = pots[pi];
+    var elig  = pot.eligible;
+    var best  = null;
+    var winners = [];
     for (var i = 0; i < elig.length; i++) {
       var sc2 = hands[elig[i]];
       if (!sc2) continue;
-      if (!best) { best=sc2; winners=[elig[i]]; }
-      else {
-        var cmp = sc2.rank-best.rank||cmpTie(sc2.tie,best.tie);
-        if (cmp>0) { best=sc2; winners=[elig[i]]; }
-        else if (cmp===0) winners.push(elig[i]);
+      if (!best) {
+        best = sc2; winners = [elig[i]];
+      } else {
+        var cmp = sc2.rank - best.rank || cmpTie(sc2.tie, best.tie);
+        if      (cmp > 0) { best = sc2; winners = [elig[i]]; }
+        else if (cmp === 0) winners.push(elig[i]);
       }
     }
-    if (!primaryWinnerId&&winners.length>0) { primaryWinnerId=winners[0]; primaryHand=best; }
-    var share = Math.floor(pot.amount/winners.length);
-    var rem = pot.amount-share*winners.length;
+    if (!primaryWinnerId && winners.length > 0) {
+      primaryWinnerId = winners[0];
+      primaryHand     = best;
+    }
+    var share = Math.floor(pot.amount / winners.length);
+    var rem   = pot.amount - share * winners.length;
     for (var i = 0; i < winners.length; i++) {
-      var wid2 = winners[i];
-      var curC = (roomPlayers[wid2]&&roomPlayers[wid2].chips)||0;
-      ups['rooms/'+roomCode+'/players/'+wid2+'/chips'] = (ups['rooms/'+roomCode+'/players/'+wid2+'/chips']||curC)+(share+(i===0?rem:0));
+      var wid  = winners[i];
+      var curC = (roomPlayers[wid] && roomPlayers[wid].chips) || 0;
+      // Accumulate in case a player wins multiple pots
+      var key  = 'rooms/'+roomCode+'/players/'+wid+'/chips';
+      ups[key] = (ups[key] !== undefined ? ups[key] : curC) + share + (i === 0 ? rem : 0);
     }
   }
 
-  // Find primary winner's final chips for display
   var primaryPlayer = null;
-  for (var i = 0; i < ps.length; i++) { if (ps[i].id===primaryWinnerId) { primaryPlayer=ps[i]; break; } }
-
+  for (var i = 0; i < ps.length; i++) {
+    if (ps[i].id === primaryWinnerId) { primaryPlayer = ps[i]; break; }
+  }
   var winnerObj = {
-    id:primaryWinnerId,
-    name:primaryPlayer?primaryPlayer.name:primaryWinnerId,
-    hand:primaryHand?primaryHand.name:'',
-    amount:pots[0].amount,
-    showdown:showdownPlayers
+    id:       primaryWinnerId,
+    name:     primaryPlayer ? primaryPlayer.name : (primaryWinnerId||''),
+    hand:     primaryHand ? primaryHand.name : '',
+    amount:   pots[0] ? pots[0].amount : 0,
+    showdown: showdownPlayers
   };
 
-  db.ref().update(ups).then(function(){
+  db.ref().update(ups).then(function() {
     animatePotToWinner(primaryWinnerId);
-    return db.ref('rooms/'+roomCode+'/game').update({winner:winnerObj,stage:'complete',sidePots:pots});
+    return db.ref('rooms/'+roomCode+'/game').update({
+      winner:   winnerObj,
+      stage:    'complete',
+      sidePots: pots
+    });
   });
 }
 
-// ── Award (no showdown) ───────────────────────────────────────
+// ── Award (no showdown — last player standing) ────────────────
 function doAward(winnerId, g, ps, sc, showdownPlayers) {
-  db.ref('rooms/'+roomCode).once('value').then(function(snap){
+  // Re-fetch for authoritative chip and pot values
+  db.ref('rooms/'+roomCode).once('value').then(function(snap) {
     if (!snap.exists()) return;
-    var room = snap.val();
-    var freshGame = room.game||{};
-    var pot = freshGame.pot||0;
-    var freshP = room.players||{};
-    var curChips = (freshP[winnerId]&&freshP[winnerId].chips)||0;
+    var room     = snap.val();
+    var freshGame = room.game || {};
+    var pot      = freshGame.pot || 0;
+    var freshP   = room.players || {};
+    var curChips = (freshP[winnerId] && freshP[winnerId].chips) || 0;
+
     var wp = null;
-    for (var i = 0; i < ps.length; i++) { if (ps[i].id===winnerId) { wp=ps[i]; break; } }
-    var handName = sc?sc.name:'last player standing';
+    for (var i = 0; i < ps.length; i++) {
+      if (ps[i].id === winnerId) { wp = ps[i]; break; }
+    }
 
     var winnerObj = {
-      id:winnerId,
-      name:wp?wp.name:winnerId,
-      hand:handName,
-      amount:pot
+      id:     winnerId,
+      name:   wp ? wp.name : winnerId,
+      hand:   sc ? sc.name : 'last player standing',
+      amount: pot
     };
-    if (showdownPlayers&&showdownPlayers.length>1) winnerObj.showdown=showdownPlayers;
+    if (showdownPlayers && showdownPlayers.length > 1)
+      winnerObj.showdown = showdownPlayers;
 
-    db.ref('rooms/'+roomCode+'/players/'+winnerId).update({chips:curChips+pot})
-      .then(function(){
+    db.ref('rooms/'+roomCode+'/players/'+winnerId).update({chips: curChips + pot})
+      .then(function() {
         animatePotToWinner(winnerId);
-        return db.ref('rooms/'+roomCode+'/game').update({winner:winnerObj,stage:'complete'});
+        return db.ref('rooms/'+roomCode+'/game').update({
+          winner: winnerObj,
+          stage:  'complete'
+        });
       });
   });
 }
 
 // ── Winner Display ────────────────────────────────────────────
 function showWinner(w, g) {
-  winnerShown = true;
-  suppressRender = true;  // stop re-rendering old hand state while winner shows
-  if (turnTimer) { clearTimeout(turnTimer); turnTimer=null; }
-  el('wName').textContent = w.name;
-  el('wHand').textContent = w.hand;
-  el('wLabel').textContent = w.isSplit?'SPLIT POT':'WINNER';
-  el('wAmt').textContent = '+'+((w.amount||0).toLocaleString());
+  winnerShown    = true;
+  suppressRender = true;
+  if (turnTimer) { clearTimeout(turnTimer); turnTimer = null; }
 
-  // Board
-  var boardEl = el('wBoard');
+  el('wName').textContent  = w.name;
+  el('wHand').textContent  = w.hand;
+  el('wLabel').textContent = w.isSplit ? 'SPLIT POT' : 'WINNER';
+  el('wAmt').textContent   = '+' + ((w.amount || 0).toLocaleString());
+
+  // Show board only on showdown
+  var boardEl     = el('wBoard');
+  var isShowdown  = w.showdown && w.showdown.length > 1;
   boardEl.innerHTML = '';
-  var isShowdown = w.showdown&&w.showdown.length>1;
-  if (isShowdown&&g&&g.community) {
-    var comm = g.community.slice(0,5);
-    var bHtml='';
-    for (var i = 0; i < comm.length; i++) bHtml+=cardHTML(comm[i],'cm');
-    boardEl.innerHTML = bHtml;
-    boardEl.style.display='';
-  } else { boardEl.style.display='none'; }
+  if (isShowdown && g && g.community) {
+    var comm = g.community.slice(0, 5);
+    var bHtml = '';
+    for (var i = 0; i < comm.length; i++) bHtml += cardHTML(comm[i], 'cm');
+    boardEl.innerHTML    = bHtml;
+    boardEl.style.display = '';
+  } else {
+    boardEl.style.display = 'none';
+  }
 
-  // Close button — only for showdown
-  el('wCloseBtn').style.display = isShowdown?'':'none';
+  el('wCloseBtn').style.display = isShowdown ? '' : 'none';
 
   // Showdown hands
-  var sdWrap = el('wShowdown');
+  var sdWrap     = el('wShowdown');
   sdWrap.innerHTML = '';
   if (isShowdown) {
-    var html='';
+    var html = '';
     for (var i = 0; i < w.showdown.length; i++) {
-      var sp = w.showdown[i];
-      var isWin = sp.id===w.id;
-      var ch='';
-      if (sp.hand) for (var j=0;j<sp.hand.length;j++) ch+=cardHTML(sp.hand[j],'cm');
-      html+='<div class="sd-player">'
-        +'<div class="sd-name">'+sp.name+'</div>'
-        +'<div class="sd-cards">'+ch+'</div>'
-        +'<div class="sd-rank">'+sp.rank+'</div>'
-        +(isWin?'<div class="sd-winner-tag">&#9654; WINNER</div>':'')
-        +'</div>';
+      var sp    = w.showdown[i];
+      var isWin = sp.id === w.id;
+      var ch    = '';
+      if (sp.hand) {
+        for (var j = 0; j < sp.hand.length; j++) ch += cardHTML(sp.hand[j], 'cm');
+      }
+      html += '<div class="sd-player">'
+        + '<div class="sd-name">'    + sp.name  + '</div>'
+        + '<div class="sd-cards">'   + ch       + '</div>'
+        + '<div class="sd-rank">'    + sp.rank  + '</div>'
+        + (isWin ? '<div class="sd-winner-tag">&#9654; WINNER</div>' : '')
+        + '</div>';
     }
     sdWrap.innerHTML = html;
   }
 
   // Standings
-  var stEl = el('wStandings');
-  var stPs = getPlayers().slice();
-  stPs.sort(function(a,b){return b.chips-a.chips;});
-  var stHtml='<div class="standings-title">Standings</div>';
+  var stEl  = el('wStandings');
+  var stPs  = getPlayers().slice();
+  stPs.sort(function(a,b) { return b.chips - a.chips; });
+  var stHtml = '<div class="standings-title">Standings</div>';
   for (var i = 0; i < stPs.length; i++) {
     var sp2 = stPs[i];
-    stHtml+='<div class="standings-row'+(sp2.id===myId?' me':'')+'"><div class="standings-pos">'+(i+1)+'</div>'
-      +'<div class="standings-name">'+sp2.name+'</div>'
-      +'<div class="standings-chips">'+sp2.chips.toLocaleString()+'</div></div>';
+    stHtml += '<div class="standings-row' + (sp2.id === myId ? ' me' : '') + '">'
+      + '<div class="standings-pos">'   + (i + 1)                    + '</div>'
+      + '<div class="standings-name">'  + sp2.name                   + '</div>'
+      + '<div class="standings-chips">' + sp2.chips.toLocaleString() + '</div>'
+      + '</div>';
   }
   stEl.innerHTML = stHtml;
 
   show('sWinner');
 
-  var delay = isShowdown?10000:5000;
+  var delay = isShowdown ? 10000 : 5000;
   if (winnerTimer) clearTimeout(winnerTimer);
-  winnerTimer = setTimeout(function(){ dismissWinner(); }, delay);
+  winnerTimer = setTimeout(function() { dismissWinner(); }, delay);
 }
 
 function dismissWinner() {
-  if (winnerTimer) { clearTimeout(winnerTimer); winnerTimer=null; }
+  if (winnerTimer) { clearTimeout(winnerTimer); winnerTimer = null; }
   hide('sWinner');
   checkGameOver();
 }
 
 function checkGameOver() {
-  var ps = getPlayers();
-  var withChips = [];
-  for (var i = 0; i < ps.length; i++) { if (ps[i].chips>0) withChips.push(ps[i]); }
-  if (withChips.length<=1) {
+  var ps         = getPlayers();
+  var withChips  = [];
+  for (var i = 0; i < ps.length; i++) {
+    if (ps[i].chips > 0) withChips.push(ps[i]);
+  }
+
+  if (withChips.length <= 1) {
+    // True game over
     suppressRender = false;
-    var goName = withChips.length===1?withChips[0].name:'Someone';
+    var goName = withChips.length === 1 ? withChips[0].name : 'Someone';
     el('goTitle').textContent = 'Game Complete';
-    el('goBody').textContent = goName+' wins the game!';
-    if (isHost) { el('goHostBtns').style.display=''; el('goWaitMsg').style.display='none'; }
-    else        { el('goHostBtns').style.display='none'; el('goWaitMsg').style.display=''; }
+    el('goBody').textContent  = goName + ' wins the game!';
+    if (isHost) { el('goHostBtns').style.display = ''; el('goWaitMsg').style.display = 'none'; }
+    else        { el('goHostBtns').style.display = 'none'; el('goWaitMsg').style.display = ''; }
     show('sGameOver');
+
   } else if (isHost) {
-    if (gs&&gs.status==='rebuy_pause') { suppressRender=false; return; }
-    // Brief pause then deal — suppressRender stays true until new hand renders
-    setTimeout(function(){
-      lastAnimatedBets = {};
-      renderedHandId = '';
-      window._oppHandId = undefined;
-      initHand();
-      // suppressRender lifts on first render of new hand
-      setTimeout(function(){ suppressRender=false; }, 1500);
-    }, 800);
+    if (gs && gs.status === 'rebuy_pause') { suppressRender = false; return; }
+    // Clear stale player actions before dealing
+    db.ref('rooms/'+roomCode+'/playerActions').remove();
+    // Deal next hand — suppressRender lifts in render() when new hand arrives
+    lastAnimatedBets  = {};
+    renderedHandId    = '';
+    window._oppHandId = undefined;
+    setTimeout(function() { initHand(); }, 800);
+
   } else {
-    // Non-host: lift suppress so new hand renders when it arrives
-    setTimeout(function(){ suppressRender=false; }, 1000);
+    // Non-host: suppressRender lifts in render() when new hand state arrives
+    // No timer needed — render() detects the new hand via renderedHandId
+    suppressRender = false;
   }
 }
 
 // ── Bot Scheduling ─────────────────────────────────────────────
 function isOnlyBotsActive() {
-  if (!gs||!gs.game) return false;
+  if (!gs || !gs.game) return false;
   var g = gs.game;
-  if (g.stage==='complete') return false;
+  if (g.stage === 'complete') return false;
   var ps = getPlayers();
+  // Only relevant in single-human games
   var humanCount = 0;
   for (var i = 0; i < ps.length; i++) { if (!ps[i].isBot) humanCount++; }
-  if (humanCount!==1) return false;
-  var folded=safeObj(g.folded),allIn=safeObj(g.allIn);
-  if (!folded[myId]&&!allIn[myId]) return false;
-  var ao=g.actionOrder||[];
+  if (humanCount !== 1) return false;
+  var folded = safeObj(g.folded);
+  var allIn  = safeObj(g.allIn);
+  if (!folded[myId] && !allIn[myId]) return false;
+  var ao = g.actionOrder || [];
   for (var i = 0; i < ao.length; i++) {
-    var pp=getPlayerById(ao[i]);
-    if (pp&&pp.isBot&&!folded[ao[i]]&&!allIn[ao[i]]) return true;
+    var pp = getPlayerById(ao[i]);
+    if (pp && pp.isBot && !folded[ao[i]] && !allIn[ao[i]]) return true;
   }
   return false;
 }
 
 function scheduleBots() {
-  if (!isHost||!gs||!gs.game||gs.game.stage==='complete') return;
+  if (!isHost || !gs || !gs.game || gs.game.stage === 'complete') return;
+  // Only schedule if the current player is actually a bot
+  var g   = gs.game;
+  var ao  = g.actionOrder || [];
+  var cur = ao[g.actionIdx];
+  var curP = getPlayerById(cur);
+  if (!curP || !curP.isBot) return;
   if (botTimer) clearTimeout(botTimer);
-  var delay = isOnlyBotsActive()?300:2200;
+  var delay = isOnlyBotsActive() ? 300 : 2200;
   botTimer = setTimeout(runBotTick, delay);
 }
 
 function runBotTick() {
-  if (!isHost||!gs||!gs.game) return;
-  if (botLock||handLock) { scheduleBots(); return; }
-  var g = gs.game;
-  if (g.stage==='complete') return;
-  var ao = g.actionOrder||[];
+  if (!isHost || !gs || !gs.game) return;
+  if (handLock) { scheduleBots(); return; }
+  var g   = gs.game;
+  if (g.stage === 'complete') return;
+  var ao   = g.actionOrder || [];
   var curId = ao[g.actionIdx];
-  var curP = getPlayerById(curId);
-  if (!curP||!curP.isBot) return;
-  if (safeObj(g.folded)[curId]||safeObj(g.allIn)[curId]) { advanceHand(curId); return; }
-  botLock = true;
-  var dec = botDecide(curId,g,curP,gs.settings);
-  var myBet = safeObj(g.bets)[curId]||0;
+  var curP  = getPlayerById(curId);
+  if (!curP || !curP.isBot) return;
+  if (safeObj(g.folded)[curId] || safeObj(g.allIn)[curId]) {
+    // This shouldn't happen but guard against it
+    db.ref('rooms/'+roomCode).once('value').then(function(snap) {
+      if (snap.exists()) advanceHand(snap.val(), curId);
+    });
+    return;
+  }
+  var dec   = botDecide(curId, g, curP, gs.settings);
+  var myBet = safeObj(g.bets)[curId] || 0;
   var action;
-  if (dec.action==='fold') action={type:'fold',pid:curId,ts:Date.now()};
-  else if (dec.action==='check') action={type:'call',pid:curId,ts:Date.now()}; // check = call 0
-  else if (dec.action==='call') action={type:'call',pid:curId,ts:Date.now()};
-  else action={type:'bet',pid:curId,amount:dec.amount||myBet,ts:Date.now()};
-  botLock = false;
-  applyAction(curId,action);
+  if      (dec.action === 'fold')  action = {type:'fold', pid:curId, ts:Date.now()};
+  else if (dec.action === 'check') action = {type:'call', pid:curId, ts:Date.now()};
+  else if (dec.action === 'call')  action = {type:'call', pid:curId, ts:Date.now()};
+  else                             action = {type:'bet',  pid:curId, amount:dec.amount||myBet, ts:Date.now()};
+  applyAction(curId, action);
 }
 
 // ── Player Actions Queue Listener (host reads non-host actions) ─
 function subscribePlayerActions() {
   if (!isHost) return;
+  // Record the time we attach the listener — ignore any queued actions
+  // from before this moment (prevents stale actions replaying on reconnect)
+  var listenStart = Date.now();
   db.ref('rooms/'+roomCode+'/playerActions').on('child_added', function(snap) {
     var action = snap.val();
-    if (!action||!action.pid) return;
-    if (action.pid===myId) return; // host handles their own directly
-    // Clear the action so it doesn't fire again
+    if (!action || !action.pid) return;
+    if (action.pid === myId) return;
+    // Ignore actions queued before we started listening
+    if (action.ts && action.ts < listenStart) { snap.ref.remove(); return; }
     snap.ref.remove();
     applyAction(action.pid, action);
   });
