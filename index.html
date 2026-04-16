@@ -520,6 +520,10 @@ var winnerTimer = null;
 var pendingHostTransferIds = []; // queue of player ids to offer host to
 var pendingRebuyId = null;       // player currently requesting rebuy
 var lastAnimatedBets = {};       // tracks bets per player for chip anim
+var renderedHandId = '';         // tracks which hand cards have been animated
+var suppressRender = false;      // suppress render during winner/next-hand gap
+var turnTimer = null;            // human turn countdown
+var handLockTimer = null;        // safety: auto-release stuck handLock
 
 // ── DOM helpers ───────────────────────────────────────────────
 function el(id) { return document.getElementById(id); }
@@ -953,6 +957,38 @@ function initHand() {
     if (!snap.exists()) return;
     var room = snap.val();
     var settings = room.settings;
+
+    // ── CHIP RECOVERY: if a hand was abandoned mid-way (host hit Next,
+    // or a hand got stuck), return any unawarded bets to the players
+    // who made them before we start the new hand. This prevents chip bleed.
+    var prevGame = room.game;
+    if (prevGame && prevGame.stage !== 'complete' && prevGame.bets) {
+      var recoveryUps = {};
+      var bkeys = Object.keys(prevGame.bets);
+      for (var ri = 0; ri < bkeys.length; ri++) {
+        var rpid = bkeys[ri];
+        var ramt = prevGame.bets[rpid] || 0;
+        if (ramt > 0 && room.players && room.players[rpid]) {
+          var rcur = room.players[rpid].chips || 0;
+          recoveryUps['rooms/'+roomCode+'/players/'+rpid+'/chips'] = rcur + ramt;
+        }
+      }
+      if (Object.keys(recoveryUps).length > 0) {
+        // Apply recovery synchronously before continuing — wait for it
+        db.ref().update(recoveryUps);
+        // Re-fetch room after recovery so chip values are correct below
+        return db.ref('rooms/'+roomCode).once('value').then(function(snap2) {
+          if (!snap2.exists()) return;
+          dealNewHand(snap2.val());
+        });
+      }
+    }
+    dealNewHand(room);
+  });
+}
+
+function dealNewHand(room) {
+    var settings = room.settings;
     var allP = [], pkeys = Object.keys(room.players||{});
     for (var i = 0; i < pkeys.length; i++) allP.push(room.players[pkeys[i]]);
     allP.sort(function(a,b){return a.seat-b.seat;});
@@ -1019,6 +1055,8 @@ function initHand() {
     };
 
     lastAnimatedBets = {};
+    renderedHandId = '';
+    window._oppHandId = undefined;
     handLock = false;
     botLock = false;
 
@@ -1041,6 +1079,7 @@ function enterGame() {
 // ── RENDER ────────────────────────────────────────────────────
 function render() {
   if (!gs||!gs.game) return;
+  if (suppressRender) return;
   var g = gs.game;
   var ps = getPlayers();
   var settings = gs.settings;
@@ -1080,12 +1119,15 @@ function render() {
 
 function renderComm(g) {
   var rev = g.communityRevealed||0;
+  var handId = g.dealerId+'-'+g.dealerSeat+'-'+g.stage;
+  var isNew = (renderedHandId !== handId);
   var html = '';
   for (var i = 0; i < 5; i++) {
-    if (i<rev) html += cardHTML(g.community[i],'cm','deal-comm',(i*0.2));
+    if (i<rev) html += cardHTML(g.community[i],'cm',isNew?'deal-comm':'',(isNew?i*0.2:0));
     else html += cardPhHTML('cm');
   }
   el('commCards').innerHTML = html;
+  if (isNew) renderedHandId = handId;
 }
 
 function renderMySeat(g, ps, settings) {
@@ -1132,7 +1174,14 @@ function renderMySeat(g, ps, settings) {
   if (!mc) return;
   if (g.hands&&g.hands[myId]&&!myFolded) {
     var h = g.hands[myId];
-    mc.innerHTML = cardHTML(h[0],'my','deal-my',0.3)+cardHTML(h[1],'my','deal-my',0.45);
+    var myHandId = g.dealerId+'-'+g.dealerSeat;
+    var animMy = (el('myCardsWrap').getAttribute('data-hand') !== myHandId);
+    if (animMy) {
+      mc.setAttribute('data-hand', myHandId);
+      mc.innerHTML = cardHTML(h[0],'my','deal-my',0.3)+cardHTML(h[1],'my','deal-my',0.45);
+    } else if (!mc.querySelector('.card')) {
+      mc.innerHTML = cardHTML(h[0],'my','',0)+cardHTML(h[1],'my','',0);
+    }
     var comm = (g.community||[]).slice(0,g.communityRevealed||0);
     if (comm.length>=3) {
       var best = evalHand(h.concat(comm));
@@ -1181,7 +1230,9 @@ function renderSeats(g, ps) {
 
     // Opponent cards (backs) or nothing if folded
     var cardsHtml = '';
-    if (!fold) cardsHtml = cardBackHTML('op','deal-opp',0.1)+cardBackHTML('op','deal-opp',0.2);
+    var oppHandId = g.dealerId+'-'+g.dealerSeat;
+    var animOpp = (typeof window._oppHandId === 'undefined' || window._oppHandId !== oppHandId);
+    if (!fold) cardsHtml = cardBackHTML('op',animOpp?'deal-opp':'',animOpp?0.1:0)+cardBackHTML('op',animOpp?'deal-opp':'',animOpp?0.2:0);
 
     var style = 'left:'+pos.x+'%;top:'+pos.y+'%;-webkit-transform:translate(-50%,-50%);transform:translate(-50%,-50%);';
     html += '<div class="seat" id="seat-'+p.id+'" style="'+style+'">'
@@ -1201,6 +1252,7 @@ function renderSeats(g, ps) {
     +'</div>';
   }
   el('seatContainer').innerHTML = html;
+  if (opps.length>0) window._oppHandId = g.dealerId+'-'+g.dealerSeat;
 }
 
 function renderControls(g, ps, settings) {
@@ -1235,7 +1287,22 @@ function renderControls(g, ps, settings) {
     var minR = g.currentBet>0?Math.max(g.currentBet*2,myBet+toCall+bb):bb;
     minR = Math.min(minR,myBet+me.chips);
     el('betAmt').value = minR;
+    // Start 20-second turn timer if not already running
+    if (!turnTimer) {
+      turnTimer = setTimeout(function() {
+        turnTimer = null;
+        if (!isMyTurn()) return;
+        // Auto-check if possible, otherwise fold
+        var g2 = gs&&gs.game?gs.game:null;
+        if (!g2) return;
+        var myB2 = safeObj(g2.bets)[myId]||0;
+        var tc2  = Math.max(0,(g2.currentBet||0)-myB2);
+        if (tc2===0) actCall(); else actFold();
+      }, 20000);
+    }
   } else {
+    // Not my turn — clear any running timer
+    if (turnTimer) { clearTimeout(turnTimer); turnTimer=null; }
     el('bFold').disabled = fold||ain||g.stage==='complete';
     el('bCall').disabled = true;
     el('bBet').disabled  = true;
@@ -1389,6 +1456,9 @@ function applyAction(pid, action) {
 function advanceHand(actingPid) {
   if (!isHost||handLock) return;
   handLock = true;
+  // Safety valve: if handLock never clears in 8s, release it
+  if (handLockTimer) clearTimeout(handLockTimer);
+  handLockTimer = setTimeout(function() { handLock=false; handLockTimer=null; }, 8000);
   db.ref('rooms/'+roomCode).once('value').then(function(snap) {
     if (!snap.exists()) { handLock=false; return; }
     var room = snap.val();
@@ -1648,6 +1718,8 @@ function doAward(winnerId, g, ps, sc, showdownPlayers) {
 // ── Winner Display ────────────────────────────────────────────
 function showWinner(w, g) {
   winnerShown = true;
+  suppressRender = true;  // stop re-rendering old hand state while winner shows
+  if (turnTimer) { clearTimeout(turnTimer); turnTimer=null; }
   el('wName').textContent = w.name;
   el('wHand').textContent = w.hand;
   el('wLabel').textContent = w.isSplit?'SPLIT POT':'WINNER';
@@ -1719,7 +1791,7 @@ function checkGameOver() {
   var withChips = [];
   for (var i = 0; i < ps.length; i++) { if (ps[i].chips>0) withChips.push(ps[i]); }
   if (withChips.length<=1) {
-    // True game over
+    suppressRender = false;
     var goName = withChips.length===1?withChips[0].name:'Someone';
     el('goTitle').textContent = 'Game Complete';
     el('goBody').textContent = goName+' wins the game!';
@@ -1727,13 +1799,19 @@ function checkGameOver() {
     else        { el('goHostBtns').style.display='none'; el('goWaitMsg').style.display=''; }
     show('sGameOver');
   } else if (isHost) {
-    // Check for rebuy requests before dealing next hand
-    if (gs&&gs.status==='rebuy_pause') return;
-    var autoDelay = (gs&&gs.game&&gs.game.winner&&gs.game.winner.showdown&&gs.game.winner.showdown.length>1)?11000:6000;
+    if (gs&&gs.status==='rebuy_pause') { suppressRender=false; return; }
+    // Brief pause then deal — suppressRender stays true until new hand renders
     setTimeout(function(){
       lastAnimatedBets = {};
+      renderedHandId = '';
+      window._oppHandId = undefined;
       initHand();
-    }, autoDelay);
+      // suppressRender lifts on first render of new hand
+      setTimeout(function(){ suppressRender=false; }, 1500);
+    }, 800);
+  } else {
+    // Non-host: lift suppress so new hand renders when it arrives
+    setTimeout(function(){ suppressRender=false; }, 1000);
   }
 }
 
@@ -1883,8 +1961,12 @@ function doAddChips() {
 }
 function hNextHand() {
   if (winnerTimer) { clearTimeout(winnerTimer); winnerTimer=null; }
+  if (turnTimer)   { clearTimeout(turnTimer);   turnTimer=null; }
   hide('sWinner'); hide('sGameOver');
   lastAnimatedBets = {};
+  renderedHandId = '';
+  window._oppHandId = undefined;
+  suppressRender = false;
   handLock = false; botLock = false;
   initHand();
 }
