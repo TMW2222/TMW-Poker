@@ -426,7 +426,7 @@ html,body{height:100%;overflow:hidden;background:#040804;font-family:'Helvetica 
   <div id="hostBar" class="hid">
     <button class="bt btghost" id="btnAddTog">+$</button>
     <button class="bt btgold"  id="btnNextHand">Next</button>
-    <button class="bt btghost" id="btnPause">Pause</button>
+    <button class="bt btghost" id="btnPause" style="-webkit-transition:background .2s,color .2s;transition:background .2s,color .2s;">Pause</button>
     <button class="bt btred"   id="btnEndGame">End</button>
     <div id="addRow" class="addrow hid">
       <select id="addWho"></select>
@@ -540,11 +540,9 @@ var pendingRebuyId = null;       // player currently requesting rebuy
 var lastAnimatedBets = {};       // tracks bets per player for chip anim
 var gamePaused = false;          // host-controlled pause
 var renderedHandId = '';         // tracks which hand cards have been animated
-var suppressRender = false;      // suppress render during winner/next-hand gap
 var turnTimer = null;            // human turn countdown
 var urgentTimer = null;          // fires at 15s to switch pulse red
 var handLockTimer = null;        // safety: auto-release stuck handLock
-var gamePaused = false;          // host pause flag
 
 // ── DOM helpers ───────────────────────────────────────────────
 function el(id) { return document.getElementById(id); }
@@ -1087,11 +1085,39 @@ function dealNewHand(room) {
     handLock = false;
     botLock = false;
 
+    // Clear winnerShown BEFORE writing to Firebase
+    winnerShown = false;
+
+    // Post first log entry before cards are dealt
+    var sbName2 = sbP.name, bbName2 = bbP.name;
+    var sbAmt2 = sbAmt, bbAmt2 = bbAmt;
+    var firstPlayer = ps[actionOrder.indexOf(actionOrder[0]) >= 0 ? 0 : 0];
+    var utgName = '';
+    if (actionOrder.length > 0) {
+      var utgP = null;
+      for (var i2 = 0; i2 < ps.length; i2++) {
+        if (ps[i2].id === actionOrder[0]) { utgP = ps[i2]; break; }
+      }
+      if (utgP) utgName = utgP.name;
+    }
+
     db.ref().update(ups)
       .then(function(){ return db.ref('rooms/'+roomCode+'/game').set(game); })
       .then(function(){
-        winnerShown = false;
-        return db.ref('rooms/'+roomCode).update({status:'playing'});
+        return db.ref('rooms/'+roomCode).update({
+          status: 'playing',
+          actionLog: [sbName2 + ' posts ' + sbAmt2]
+        });
+      })
+      .then(function(){
+        // Brief delay then show BB post
+        setTimeout(function(){
+          db.ref('rooms/'+roomCode+'/actionLog').set([bbName2 + ' posts ' + bbAmt2]);
+          // Then show action on first player
+          setTimeout(function(){
+            if (utgName) db.ref('rooms/'+roomCode+'/actionLog').set(['Action on ' + utgName]);
+          }, 600);
+        }, 500);
       });
 }
 
@@ -1105,7 +1131,7 @@ function enterGame() {
 // ── RENDER ────────────────────────────────────────────────────
 function render() {
   if (!gs||!gs.game) return;
-  if (suppressRender) return;
+  if (winnerShown) return;
   var g = gs.game;
   var ps = getPlayers();
   var settings = gs.settings;
@@ -1139,11 +1165,6 @@ function render() {
   renderSeats(g, ps);
   renderControls(g, ps, settings);
 
-  // Lift suppressRender when a genuinely new hand has arrived
-  if (suppressRender && g.stage !== 'complete') {
-    var newHandId = g.dealerId + '-' + g.dealerSeat;
-    if (renderedHandId === newHandId) suppressRender = false;
-  }
 
   if (g.stage === 'complete') {
     // Always disable action buttons when hand is over
@@ -1155,6 +1176,23 @@ function render() {
 
   checkRebuyBanner();
   renderLog();
+
+  // Push "Action on X" when it's a new player's turn (host only, not on complete)
+  if (isHost && g.stage !== 'complete') {
+    var ao2  = g.actionOrder || [];
+    var curId2 = ao2[g.actionIdx];
+    var curP2  = getPlayerById(curId2);
+    var turnKey = g.dealerId + '-' + g.dealerSeat + '-' + g.stage + '-' + g.actionIdx;
+    if (curP2 && window._lastTurnKey !== turnKey) {
+      window._lastTurnKey = turnKey;
+      // Don't overwrite mid-action logs — push after a tiny delay
+      setTimeout(function() {
+        if (window._lastTurnKey === turnKey) {
+          pushLog('Action on ' + curP2.name);
+        }
+      }, 800);
+    }
+  }
 }
 
 function renderComm(g) {
@@ -1392,25 +1430,20 @@ function checkRebuyBanner() {
 // Host writes log entries; all clients display last 4
 function pushLog(txt) {
   if (!isHost) return;
-  var ref = db.ref('rooms/'+roomCode+'/actionLog');
-  ref.once('value').then(function(snap) {
-    var arr = snap.val() ? snap.val() : [];
-    arr.push(txt);
-    if (arr.length > 6) arr = arr.slice(arr.length - 6);
-    ref.set(arr);
-  });
+  // Store as array of 1 for simplicity — only last action shown
+  db.ref('rooms/'+roomCode+'/actionLog').set([txt]);
 }
 
 function renderLog() {
   var logEl = el('actionLog');
-  if (!logEl || !gs || !gs.actionLog) return;
-  var entries = gs.actionLog;
-  var html = '';
-  var start = Math.max(0, entries.length - 4);
-  for (var i = start; i < entries.length; i++) {
-    html += '<div class="log-entry">' + entries[i] + '</div>';
+  if (!logEl) return;
+  if (!gs || !gs.actionLog || !gs.actionLog.length) {
+    logEl.innerHTML = '<div class="log-entry">&#8203;</div>';
+    return;
   }
-  logEl.innerHTML = html;
+  var entries = gs.actionLog;
+  var last = entries[entries.length - 1];
+  logEl.innerHTML = '<div class="log-entry">' + last + '</div>';
 }
 
 // ── Player Actions ────────────────────────────────────────────
@@ -1870,8 +1903,7 @@ function doAward(winnerId, g, ps, sc, showdownPlayers) {
 
 // ── Winner Display ────────────────────────────────────────────
 function showWinner(w, g) {
-  winnerShown    = true;
-  suppressRender = true;
+  winnerShown = true;
   if (turnTimer) { clearTimeout(turnTimer); turnTimer=null; }
 
   el('wName').textContent  = w.name;
@@ -1937,7 +1969,6 @@ function checkGameOver() {
   for (var i = 0; i < ps.length; i++) { if (ps[i].chips>0) withChips.push(ps[i]); }
 
   if (withChips.length <= 1) {
-    suppressRender = false;
     var goName = withChips.length===1 ? withChips[0].name : 'Someone';
     el('goTitle').textContent = 'Game Complete';
     el('goBody').textContent  = goName + ' wins the game!';
@@ -1945,27 +1976,14 @@ function checkGameOver() {
     else        { el('goHostBtns').style.display='none'; el('goWaitMsg').style.display=''; }
     show('sGameOver');
   } else if (isHost) {
-    if (gs && gs.status==='rebuy_pause') { suppressRender=false; return; }
+    if (gs && gs.status==='rebuy_pause') return;
     db.ref('rooms/'+roomCode+'/playerActions').remove();
     lastAnimatedBets = {}; renderedHandId = ''; window._oppHandId = undefined;
-    setTimeout(function(){ initHand(); }, 800);
-  } else {
-    suppressRender = false;
+    // Small delay so winner animation completes before dealing
+    setTimeout(function(){ initHand(); }, 1200);
   }
-}
-
-// ── Pause / Resume ────────────────────────────────────────────
-function togglePause() {
-  if (!isHost) return;
-  if (gamePaused) {
-    gamePaused = false;
-    el('btnPause').textContent = 'Pause';
-    db.ref('rooms/'+roomCode).update({status:'playing'});
-  } else {
-    gamePaused = true;
-    el('btnPause').textContent = 'Resume';
-    db.ref('rooms/'+roomCode).update({status:'paused'});
-  }
+  // Non-host: winnerShown cleared in dealNewHand before Firebase write,
+  // so render() will fire correctly when new game state arrives
 }
 
 // ── Bot Scheduling ─────────────────────────────────────────────
@@ -2126,7 +2144,6 @@ function hNextHand() {
   lastAnimatedBets = {};
   renderedHandId = '';
   window._oppHandId = undefined;
-  suppressRender = false;
   handLock = false;
   gamePaused = false;
   el('btnPause').textContent = 'Pause';
@@ -2134,17 +2151,19 @@ function hNextHand() {
 }
 
 function hPause() {
+  if (!isHost) return;
   gamePaused = !gamePaused;
-  el('btnPause').textContent = gamePaused ? 'Resume' : 'Pause';
   if (gamePaused) {
-    // Freeze timers
+    el('btnPause').textContent = 'Resume';
+    el('btnPause').style.background = '#c0392b';
+    el('btnPause').style.color = '#fff';
     if (turnTimer)   { clearTimeout(turnTimer);   turnTimer=null; }
-    if (urgentTimer) { clearTimeout(urgentTimer); urgentTimer=null; }
     if (botTimer)    { clearTimeout(botTimer);    botTimer=null; }
-    // Write paused status so non-host clients know
     db.ref('rooms/'+roomCode+'/status').set('paused');
   } else {
-    // Resume — restore status and restart bot/turn scheduling
+    el('btnPause').textContent = 'Pause';
+    el('btnPause').style.background = '';
+    el('btnPause').style.color = '';
     db.ref('rooms/'+roomCode+'/status').set('playing');
     if (gs && gs.game && gs.game.stage !== 'complete') scheduleBots();
   }
@@ -2217,7 +2236,7 @@ window.addEventListener('load', function() {
   el('btnAddTog').addEventListener('click', toggleAddRow);
   el('btnAddClose').addEventListener('click', function(){ el('addRow').classList.add('hid'); });
   el('btnNextHand').addEventListener('click', hNextHand);
-  el('btnPause').addEventListener('click', togglePause);
+  el('btnPause').addEventListener('click', hPause);
   el('btnPause').addEventListener('click', hPause);
   el('btnEndGame').addEventListener('click', hEndGame);
   el('btnEndYes').addEventListener('click', function(){
