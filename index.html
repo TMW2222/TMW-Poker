@@ -267,13 +267,12 @@ html,body{height:100%;overflow:hidden;background:#040804;font-family:'Helvetica 
 .modal-btns .btn{width:140px;}
 
 /* ── ACTION LOG ── */
-#actionLog{position:absolute;left:50%;top:10%;transform:translateX(-50%);-webkit-transform:translateX(-50%);z-index:15;text-align:center;min-width:200px;max-width:320px;pointer-events:none;}
-.log-entry{font-family:monospace;font-size:10px;color:rgba(255,255,255,0.55);letter-spacing:0.5px;line-height:1.8;white-space:nowrap;}
-.log-entry:last-child{color:rgba(255,255,255,0.85);font-size:11px;}
+#actionLog{position:absolute;left:50%;top:14%;-webkit-transform:translateX(-50%);transform:translateX(-50%);z-index:15;text-align:center;pointer-events:none;background:rgba(0,0,0,0.58);border:1px solid rgba(201,168,76,0.35);border-radius:20px;padding:4px 18px;white-space:nowrap;min-width:140px;max-width:75%;}
+.log-entry{font-family:Georgia,serif;font-size:11px;color:rgba(255,215,120,0.92);letter-spacing:0.5px;font-style:italic;}
 
 /* ── PAUSE OVERLAY ── */
-#pauseOverlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:150;display:none;-webkit-align-items:center;align-items:center;-webkit-justify-content:center;justify-content:center;}
-#pauseOverlay p{font-family:monospace;font-size:18px;letter-spacing:6px;color:#c9a84c;}
+#pauseOverlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:150;display:none;-webkit-align-items:center;align-items:center;-webkit-justify-content:center;justify-content:center;pointer-events:none;}
+#pauseOverlay p{font-family:monospace;font-size:18px;letter-spacing:6px;color:#c9a84c;pointer-events:none;}
 
 /* ── REBUY BANNER ── */
 #rebuyBanner{position:fixed;bottom:60px;left:50%;-webkit-transform:translateX(-50%);transform:translateX(-50%);z-index:50;background:rgba(0,0,0,.9);border:2px solid #c0392b;border-radius:12px;padding:12px 20px;text-align:center;display:none;}
