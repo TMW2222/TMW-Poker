@@ -1126,7 +1126,20 @@ function dealNewHand(room) {
 }
 
 // ── Enter Game Screen ─────────────────────────────────────────
-function enterGame() {
+function clearTableVisuals() {
+  el('commCards').innerHTML = cardPhHTML('cm') + cardPhHTML('cm') + cardPhHTML('cm') + cardPhHTML('cm') + cardPhHTML('cm');
+  el('potVal').textContent = '0';
+  el('potChipRow').innerHTML = '';
+  el('sidePotRow').textContent = '';
+  el('myBetZone').innerHTML = '';
+  el('myBet').textContent = '';
+  el('handStr').textContent = '';
+  el('myCardsWrap').innerHTML = cardPhHTML('my') + cardPhHTML('my');
+  el('myCardsWrap').removeAttribute('data-hand');
+  el('seatContainer').innerHTML = '';
+  el('actionLog').innerHTML = '<div class="log-entry">\u200B</div>';
+  el('stageLbl').textContent = '';
+}  function enterGame() {
   hide('sWait'); show('sGame');
   if (isHost) { show('hostBar'); populateAddWho(); }
   checkOrientation();
@@ -1178,6 +1191,7 @@ function render() {
     if (!winnerHandId && g.winner) {
       // Set BEFORE showWinner so any concurrent render() hits the guard
       winnerHandId = thisHandId;
+      clearTableVisuals();
       // Tiny defer so current render() stack unwinds before winner screen
       var wCopy = g.winner, gCopy = g;
       setTimeout(function(){ showWinner(wCopy, gCopy); }, 0);
@@ -1631,7 +1645,9 @@ function applyAction(pid, action) {
         ups['rooms/'+roomCode+'/game/actionIdx']      = nextIdx;
         logTxt2 = player.name + (g.currentBet>0 ? ' raises to ' : ' bets ') + newBet.toLocaleString();
         // Write all at once — actionIdx already set, no need to call advanceHand
-        db.ref().update(ups).then(function() { pushLog(logTxt2); });
+        db.ref().update(ups).then(function() { pushLog(logTxt2);
+          scheduleBots();
+        });
       } else {
         logTxt2 = player.name + ' calls ' + add.toLocaleString();
         db.ref().update(ups).then(function() {
