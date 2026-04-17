@@ -2287,8 +2287,7 @@ window.addEventListener('load', function() {
   el('btnAddClose').addEventListener('click', function(){ el('addRow').classList.add('hid'); });
   el('btnNextHand').addEventListener('click', hNextHand);
   el('btnPause').addEventListener('click', hPause);
-  el('btnPause').addEventListener('click', hPause);
-  el('btnEndGame').addEventListener('click', hEndGame);
+    el('btnEndGame').addEventListener('click', hEndGame);
   el('btnEndYes').addEventListener('click', function(){
     hide('sEndConfirm');
     db.ref('rooms/'+roomCode).update({status:'finished'}).then(function(){ location.reload(); });
