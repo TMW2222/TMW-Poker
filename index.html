@@ -1663,7 +1663,7 @@ function applyAction(pid, action) {
         logTxt2 = player.name + (g.currentBet>0 ? ' raises to ' : ' bets ') + newBet.toLocaleString();
         // Write all at once — actionIdx already set, no need to call advanceHand
         db.ref().update(ups).then(function() { pushLog(logTxt2);
-          scheduleBots();
+          setTimeout(function() { scheduleBots(); }, 300);
         });
       } else {
         logTxt2 = player.name + ' calls ' + add.toLocaleString();
