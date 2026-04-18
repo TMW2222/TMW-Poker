@@ -530,7 +530,6 @@ var roomCode = '';
 var isHost = false;
 var gs = null;          // latest Firebase snapshot value
 var botTimer = null;
-var botLock = false;
 var handLock = false;   // prevents concurrent hand advancement on host
 var winnerHandId = '';   // set to dealerId+dealerSeat when winner screen shows; empty = not showing
 var winnerTimer = null;
@@ -542,6 +541,25 @@ var renderedHandId = '';         // tracks which hand cards have been animated
 var turnTimer = null;            // human turn countdown
 var urgentTimer = null;          // fires at 15s to switch pulse red
 var handLockTimer = null;        // safety: auto-release stuck handLock
+
+// ── Chip Audit Logging (diagnostic) ─────────────────────────
+function logChipAudit(label) {
+  if (!gs || !gs.players) return;
+  var total = 0, pot = 0, details = [];
+  var pkeys = Object.keys(gs.players);
+  for (var i = 0; i < pkeys.length; i++) {
+    var p = gs.players[pkeys[i]];
+    total += (p.chips || 0);
+    details.push(p.name + ':' + (p.chips || 0));
+  }
+  if (gs.game && gs.game.pot) pot = gs.game.pot;
+  var betsTotal = 0;
+  if (gs.game && gs.game.bets) {
+    var bk = Object.keys(gs.game.bets);
+    for (var i = 0; i < bk.length; i++) betsTotal += (gs.game.bets[bk[i]] || 0);
+  }
+  console.log('[CHIP AUDIT ' + label + '] chips=' + total + ' pot=' + pot + ' bets=' + betsTotal + ' sum=' + (total + pot) + ' | ' + details.join(', '));
+}
 
 // ── DOM helpers ───────────────────────────────────────────────
 function el(id) { return document.getElementById(id); }
@@ -1085,7 +1103,6 @@ function dealNewHand(room) {
     window._prevCommRev = 0;
     window._lastTurnKey = '';
     handLock = false;
-    botLock = false;
 
     // Post first log entry before cards are dealt
     // NOTE: winnerHandId is cleared in the final .then() AFTER Firebase write
@@ -1668,7 +1685,7 @@ function advanceHand(room, actingPid) {
   if (handLock) return;
   handLock = true;
   if (handLockTimer) clearTimeout(handLockTimer);
-  handLockTimer = setTimeout(function() { handLock=false; handLockTimer=null; }, 8000);
+  handLockTimer = setTimeout(function() { handLock=false; handLockTimer=null; scheduleBots(); }, 8000);
 
   var g       = room.game;
   var folded  = safeObj(g.folded);
@@ -1719,6 +1736,7 @@ function advanceHand(room, actingPid) {
       // Re-fetch for fresh state after animation delay
       db.ref('rooms/'+roomCode).once('value').then(function(snap2) {
         handLock = false;
+        if (handLockTimer) { clearTimeout(handLockTimer); handLockTimer=null; }
         if (!snap2.exists()) return;
         var room2 = snap2.val();
         var g2    = room2.game;
@@ -1743,7 +1761,11 @@ function advanceHand(room, actingPid) {
     db.ref('rooms/'+roomCode+'/game').update({
       actionIdx:      ni,
       actedThisRound: acted
-    }).then(function() { handLock = false; });
+    }).then(function() {
+      handLock = false;
+      if (handLockTimer) { clearTimeout(handLockTimer); handLockTimer=null; }
+      scheduleBots();
+    });
   }
 }
 
@@ -1808,6 +1830,8 @@ function doStageTransition(g, active, room) {
           doStageTransition(g2, active2, r2);
         });
       }, 1200);
+    } else {
+      scheduleBots();
     }
   });
 }
@@ -1908,6 +1932,7 @@ function doShowdown(g, active, ps) {
   db.ref().update(ups).then(function() {
     pushLog(wname + ' wins ' + wamt.toLocaleString() + (whand?' ('+whand+')':''));
     animatePotToWinner(primaryWinnerId);
+    logChipAudit('AFTER_SHOWDOWN_AWARD');
     return db.ref('rooms/'+roomCode+'/game').update({
       winner: winnerObj, stage:'complete', sidePots:pots
     });
@@ -1938,6 +1963,7 @@ function doAward(winnerId, g, ps, sc, showdownPlayers) {
       .then(function() {
         pushLog(wname2 + ' wins ' + wamt2.toLocaleString());
         animatePotToWinner(winnerId);
+        logChipAudit('AFTER_FOLD_AWARD');
         return db.ref('rooms/'+roomCode+'/game').update({
           winner: winnerObj, stage:'complete'
         });
@@ -2062,7 +2088,7 @@ function scheduleBots() {
 
 function runBotTick() {
   if (!isHost||!gs||!gs.game||gamePaused) return;
-  if (handLock) { scheduleBots(); return; }
+  if (handLock) { setTimeout(function() { scheduleBots(); }, 500); return; }
   var g = gs.game;
   if (g.stage==='complete') return;
   var ao = g.actionOrder||[], curId = ao[g.actionIdx];
@@ -2193,6 +2219,7 @@ function hNextHand() {
   window._prevCommRev = 0;
   winnerHandId = '';
   handLock = false;
+  if (handLockTimer) { clearTimeout(handLockTimer); handLockTimer=null; }
   gamePaused = false;
   el('btnPause').textContent = 'Pause';
   el('btnPause').style.background = '';
