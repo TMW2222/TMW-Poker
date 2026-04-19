@@ -1165,7 +1165,14 @@ function clearTableVisuals() {
 // ── RENDER ────────────────────────────────────────────────────
 function render() {
   if (!gs||!gs.game) return;
-  if (winnerHandId) return;
+  if (winnerHandId) {
+    var _curHandId = (gs.game.dealerId||'') + '-' + (gs.game.dealerSeat||'');
+    if (gs.game.stage !== 'complete' || _curHandId !== winnerHandId) {
+      winnerHandId = '';
+    } else {
+      return;
+    }
+  }
   var g = gs.game;
   var ps = getPlayers();
   var settings = gs.settings;
@@ -2258,6 +2265,11 @@ function subscribeRoom() {
 
     } else if (gs.status==='playing'||gs.status==='rebuy_pause'||gs.status==='paused') {
       el('pauseOverlay').style.display = gs.status==='paused' ? 'flex' : 'none';
+      if (gs.status==='paused' && !gamePaused) {
+        gamePaused = true;
+        if (turnTimer)   { clearTimeout(turnTimer);   turnTimer=null; }
+        if (urgentTimer) { clearTimeout(urgentTimer); urgentTimer=null; }
+      }
       if (!el('sGame').classList.contains('hid')||!el('sWait').classList.contains('hid')) {
         if (!el('sWait').classList.contains('hid')) enterGame();
       }
