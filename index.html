@@ -1669,11 +1669,8 @@ function applyAction(pid, action) {
         ups['rooms/'+roomCode+'/game/actionIdx']      = nextIdx;
         logTxt2 = player.name + (g.currentBet>0 ? ' raises to ' : ' bets ') + newBet.toLocaleString();
         // Write all at once — actionIdx already set, no need to call advanceHand
-        db.ref().update(ups).then(function() {
-  pushLog(logTxt2);
-  db.ref('rooms/'+roomCode).once('value').then(function(s2) {
-    if (s2.exists()) advanceHand(s2.val(), pid);
-  });
+        db.ref().update(ups).then(function() { pushLog(logTxt2);
+  setTimeout(function() { scheduleBots(); }, 300);
 });
       } else {
         logTxt2 = player.name + ' calls ' + add.toLocaleString();
@@ -2093,6 +2090,12 @@ function scheduleBots() {
   if (gamePaused) return;
   var g = gs.game, ao = g.actionOrder||[];
   var cur = ao[g.actionIdx], curP = getPlayerById(cur);
+  if (!curP || safeObj(g.allIn)[cur] || safeObj(g.folded)[cur]) {
+    db.ref('rooms/'+roomCode).once('value').then(function(s2) {
+      if (s2.exists()) advanceHand(s2.val(), null);
+    });
+    return;
+  }
   if (!curP||!curP.isBot) return;
   if (botTimer) clearTimeout(botTimer);
   var delay = isOnlyBotsActive() ? 300 : 2200;
