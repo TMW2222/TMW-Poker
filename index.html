@@ -1425,6 +1425,13 @@ function renderControls(g, ps, settings) {
     el('bFold').disabled = false;
     el('bCall').disabled = false;
     el('bBet').disabled  = false;
+    var canRaise = false;
+    for (var i = 0; i < ao.length; i++) {
+      if (ao[i] !== myId && !safeObj(g.folded)[ao[i]] && !safeObj(g.allIn)[ao[i]]) {
+        canRaise = true; break;
+      }
+    }
+    if (!canRaise) el('bBet').disabled = true;
     el('bCall').textContent = toCall>0?'Call '+toCall.toLocaleString():'Check';
     el('bBet').textContent  = g.currentBet>0?'Raise':'Bet';
     el('gToCall').textContent = toCall>0?toCall.toLocaleString():'';
