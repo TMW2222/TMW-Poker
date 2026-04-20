@@ -1669,9 +1669,12 @@ function applyAction(pid, action) {
         ups['rooms/'+roomCode+'/game/actionIdx']      = nextIdx;
         logTxt2 = player.name + (g.currentBet>0 ? ' raises to ' : ' bets ') + newBet.toLocaleString();
         // Write all at once — actionIdx already set, no need to call advanceHand
-        db.ref().update(ups).then(function() { pushLog(logTxt2);
-          setTimeout(function() { scheduleBots(); }, 300);
-        });
+        db.ref().update(ups).then(function() {
+  pushLog(logTxt2);
+  db.ref('rooms/'+roomCode).once('value').then(function(s2) {
+    if (s2.exists()) advanceHand(s2.val(), pid);
+  });
+});
       } else {
         logTxt2 = player.name + ' calls ' + add.toLocaleString();
         db.ref().update(ups).then(function() {
