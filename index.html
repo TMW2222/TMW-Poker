@@ -1846,12 +1846,15 @@ function doStageTransition(g, active, room) {
 // ── Side Pot Calculation ──────────────────────────────────────
 // Contributions derived from g.bets (ground truth for this hand)
 function calcSidePots(g, activePids, roomPlayers) {
-  var bets   = safeObj(g.bets);
+  var startChips = safeObj(g.startChips);
   var folded = safeObj(g.folded);
   var allPids = Object.keys(roomPlayers||{});
   var contributions = {};
   for (var i = 0; i < allPids.length; i++) {
-    contributions[allPids[i]] = bets[allPids[i]] || 0;
+    var _pid = allPids[i];
+    var _start = startChips[_pid];
+    var _cur = (roomPlayers[_pid] && roomPlayers[_pid].chips) || 0;
+    contributions[_pid] = (_start !== undefined) ? (_start - _cur) : 0;
   }
   var active = activePids.slice();
   active.sort(function(a,b){ return (contributions[a]||0)-(contributions[b]||0); });
