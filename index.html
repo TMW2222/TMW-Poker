@@ -2090,12 +2090,6 @@ function scheduleBots() {
   if (gamePaused) return;
   var g = gs.game, ao = g.actionOrder||[];
   var cur = ao[g.actionIdx], curP = getPlayerById(cur);
-  if (!curP || safeObj(g.allIn)[cur] || safeObj(g.folded)[cur]) {
-    db.ref('rooms/'+roomCode).once('value').then(function(s2) {
-      if (s2.exists()) advanceHand(s2.val(), null);
-    });
-    return;
-  }
   if (!curP||!curP.isBot) return;
   if (botTimer) clearTimeout(botTimer);
   var delay = isOnlyBotsActive() ? 300 : 2200;
