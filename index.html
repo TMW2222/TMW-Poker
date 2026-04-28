@@ -1081,11 +1081,20 @@ function dealNewHand(room) {
     ups['rooms/'+roomCode+'/players/'+sbP.id+'/chips'] = sbP.chips-sbAmt;
     ups['rooms/'+roomCode+'/players/'+bbP.id+'/chips'] = bbP.chips-bbAmt;
 
+    // Flag blind posters all-in if they posted everything they had
+    var blindAllIn = {};
+    if (sbP.chips - sbAmt === 0) blindAllIn[sbP.id] = true;
+    if (bbP.chips - bbAmt === 0) blindAllIn[bbP.id] = true;
+
     var actionOrder = [];
     for (var i = 0; i < ps.length; i++) actionOrder.push(ps[(utgIdx+i)%ps.length].id);
 
     var startChips = {};
     for (var i = 0; i < ps.length; i++) startChips[ps[i].id] = ps[i].chips;
+
+    // currentBet must reflect the LARGEST forced bet. If BB is short-stacked
+    // and posts less than SB, other players still need to call SB amount.
+    var effectiveBet = Math.max(sbAmt, bbAmt);
 
     var game = {
       dealerSeat:ps[dealIdx].seat, dealerId:ps[dealIdx].id,
@@ -1093,14 +1102,21 @@ function dealNewHand(room) {
       hands:hands, community:community, communityRevealed:0,
       pot:sbAmt+bbAmt,
       startChips:startChips,
-      currentBet:bbAmt, bets:bets,
+      currentBet:effectiveBet, bets:bets,
       lastRaiseSize:bb,
-      folded:{}, allIn:{},
+      folded:{}, allIn:blindAllIn,
       stage:'preflop',
       actionOrder:actionOrder, actionIdx:0,
       lastRaiser:bbP.id, actedThisRound:{},
       players:ps.map(function(p){return p.id;})
     };
+
+    // Skip past players already all-in from posting blinds
+    var skipSafety = 0;
+    while (blindAllIn[actionOrder[game.actionIdx]] && skipSafety < actionOrder.length) {
+      game.actionIdx = (game.actionIdx + 1) % actionOrder.length;
+      skipSafety++;
+    }
 
     lastAnimatedBets = {};
     renderedHandId = '';
@@ -1907,6 +1923,14 @@ function doStageTransition(g, active, room) {
   for (var i = 0; i < fullOrder.length; i++) newBets[fullOrder[i]] = 0;
   lastAnimatedBets = {};
 
+  // Compute initial actionIdx, skipping any players already all-in
+  var initialIdx = 0;
+  var skipS = 0;
+  while (safeObj(g.allIn)[fullOrder[initialIdx]] && skipS < fullOrder.length) {
+    initialIdx = (initialIdx + 1) % fullOrder.length;
+    skipS++;
+  }
+
   db.ref('rooms/'+roomCode+'/game').update({
     stage:             next,
     communityRevealed: rev,
@@ -1914,7 +1938,7 @@ function doStageTransition(g, active, room) {
     currentBet:        0,
     lastRaiseSize:     room.settings.bigBlind,
     actionOrder:       fullOrder,
-    actionIdx:         0,
+    actionIdx:         initialIdx,
     lastRaiser:        null,
     actedThisRound:    {}
   }).then(function() {
