@@ -1094,6 +1094,7 @@ function dealNewHand(room) {
       pot:sbAmt+bbAmt,
       startChips:startChips,
       currentBet:bbAmt, bets:bets,
+      lastRaiseSize:bb,
       folded:{}, allIn:{},
       stage:'preflop',
       actionOrder:actionOrder, actionIdx:0,
@@ -1433,7 +1434,8 @@ function renderControls(g, ps, settings) {
     el('bCall').textContent = toCall>0?'Call '+toCall.toLocaleString():'Check';
     el('bBet').textContent  = g.currentBet>0?'Raise':'Bet';
     el('gToCall').textContent = toCall>0?toCall.toLocaleString():'';
-    var minR = g.currentBet>0?Math.max(g.currentBet*2,myBet+toCall+bb):bb;
+    var lrs = g.lastRaiseSize || bb;
+    var minR = (g.currentBet||0) > 0 ? (g.currentBet + lrs) : bb;
     minR = Math.min(minR,myBet+me.chips);
     el('betAmt').value = minR;
     // Start 20-second turn timer if not already running and game not paused
@@ -1525,7 +1527,13 @@ function isMyTurn() {
   return ao[g.actionIdx]===myId && !safeObj(g.folded)[myId] && !safeObj(g.allIn)[myId];
 }
 
+var lastSubmitTs = 0;
 function submitAction(action) {
+  // Debounce: ignore submits within 400ms of the previous one (prevents
+  // double-taps on mobile from sending two actions for one intended action)
+  var now = Date.now();
+  if (now - lastSubmitTs < 400) return;
+  lastSubmitTs = now;
   if (isHost) {
     applyAction(myId, action);
   } else {
@@ -1644,10 +1652,20 @@ function applyAction(pid, action) {
       var newBet   = myBet + add;
       var newChips = player.chips - add;
       var isRaise  = newBet > (g.currentBet || 0);
+      var raiseIncrement = newBet - (g.currentBet || 0);
+      var lastRaiseSize  = g.lastRaiseSize || bb;
+      var isFullRaise    = isRaise && raiseIncrement >= lastRaiseSize;
 
-      if (isRaise && newChips > 0) {
-        var minRaise = Math.max((g.currentBet||0)*2, myBet+toCall+bb);
-        if (newBet < minRaise) return;
+      // Min-raise coercion: if it's a non-all-in raise below min, bump it up
+      // to legal min (or all-in, whichever is smaller). Avoids silent rejection.
+      if (isRaise && !isFullRaise && newChips > 0) {
+        var minTotal = (g.currentBet || 0) + lastRaiseSize;
+        var maxTotal = myBet + player.chips;
+        newBet   = Math.min(minTotal, maxTotal);
+        add      = newBet - myBet;
+        newChips = player.chips - add;
+        raiseIncrement = newBet - (g.currentBet || 0);
+        isFullRaise    = raiseIncrement >= lastRaiseSize;
       }
 
       ups['rooms/'+roomCode+'/game/bets/'+pid]         = newBet;
@@ -1658,17 +1676,6 @@ function applyAction(pid, action) {
 
       var logTxt2;
       if (isRaise) {
-        // On raise: figure out if this is a "full raise" or a "short all-in"
-        // Full raise re-opens action for everyone (they get to act again)
-        // Short all-in (newChips===0 and raise size < min raise) does NOT reopen action
-        var raiseSize = newBet - (g.currentBet || 0);
-        var minRaiseSize = Math.max((g.currentBet||0) - myBet, bb); // approximation: previous bet size or BB
-        // More direct: if newChips>0, this is a legal full raise (we already gated above).
-        // If newChips===0 (all-in), it's full only if raiseSize >= bb (min raise).
-        // For simplicity: full raise iff newChips>0 OR raiseSize>=bb.
-        // (This isn't perfect tracking of lastRaiseSize but is the standard simplification.)
-        var isFullRaise = (newChips > 0) || (raiseSize >= bb);
-
         var raiserIdx = ao.indexOf(pid);
         var nextIdx   = (raiserIdx + 1) % ao.length;
         var safety    = 0;
@@ -1680,19 +1687,22 @@ function applyAction(pid, action) {
         ups['rooms/'+roomCode+'/game/lastRaiser']     = pid;
         ups['rooms/'+roomCode+'/game/actionIdx']      = nextIdx;
         if (isFullRaise) {
-          // Reopen: clear actedThisRound except for raiser
+          // Update lastRaiseSize to the size of THIS raise (for next min-raise calc)
+          ups['rooms/'+roomCode+'/game/lastRaiseSize'] = raiseIncrement;
+          // Reopen action: clear actedThisRound except for raiser
           var newActed = {};
           newActed[pid] = true;
           ups['rooms/'+roomCode+'/game/actedThisRound'] = newActed;
         } else {
-          // Short all-in: keep existing actedThisRound, just mark raiser
+          // Short all-in: keep existing actedThisRound, just mark raiser.
+          // lastRaiseSize stays unchanged — short all-in doesn't set new min.
           var keepActed = {};
           var aKeys = Object.keys(safeObj(g.actedThisRound));
           for (var k = 0; k < aKeys.length; k++) keepActed[aKeys[k]] = g.actedThisRound[aKeys[k]];
           keepActed[pid] = true;
           ups['rooms/'+roomCode+'/game/actedThisRound'] = keepActed;
         }
-        logTxt2 = player.name + (g.currentBet>0 ? ' raises to ' : ' bets ') + newBet.toLocaleString() + (isFullRaise ? '' : ' (all-in)');
+        logTxt2 = player.name + ((g.currentBet||0)>0 ? ' raises to ' : ' bets ') + newBet.toLocaleString() + (isFullRaise ? '' : ' (all-in)');
         db.ref().update(ups).then(function() { pushLog(logTxt2);
           setTimeout(function() { scheduleBots(); }, 300);
         });
@@ -1902,6 +1912,7 @@ function doStageTransition(g, active, room) {
     communityRevealed: rev,
     bets:              newBets,
     currentBet:        0,
+    lastRaiseSize:     room.settings.bigBlind,
     actionOrder:       fullOrder,
     actionIdx:         0,
     lastRaiser:        null,
