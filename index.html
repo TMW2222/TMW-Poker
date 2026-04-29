@@ -1635,9 +1635,10 @@ function actBet() {
 function setQuickBet(pct) {
   if (!gs||!gs.game) return;
   var me = getPlayerById(myId); if (!me) return;
-  var buyIn = gs.settings&&gs.settings.startingChips?gs.settings.startingChips:2000;
+  var bb = gs.settings&&gs.settings.bigBlind?gs.settings.bigBlind:50;
   var myBet = safeObj(gs.game.bets)[myId]||0;
-  var amt = Math.round(buyIn*pct/5)*5;
+  var mult = pct<=0.025?2:pct<=0.05?4:8;
+  var amt = bb*mult;
   el('betAmt').value = Math.min(myBet+amt, myBet+me.chips);
 }
 function setPreset(type) {
