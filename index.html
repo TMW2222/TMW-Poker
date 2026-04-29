@@ -21,10 +21,10 @@ html,body{height:100%;overflow:hidden;background:#040804;font-family:'Helvetica 
 /* ── LOBBY ── */
 #sLobby{background:radial-gradient(ellipse at 50% 0%,#1f4433,#040804 70%);-webkit-align-items:center;align-items:center;-webkit-justify-content:center;justify-content:center;padding:30px 20px 60px;gap:0;}
 .suits{font-size:22px;letter-spacing:8px;color:#9a7a2e;text-align:center;margin-bottom:4px;}
-.logo{font-size:42px;font-weight:900;color:#c9a84c;letter-spacing:4px;text-align:center;font-family:Georgia,serif;}
+.logo{font-size:42px;font-weight:900;color:#c9a84c;letter-spacing:6px;text-align:center;font-family:Georgia,serif;text-shadow:0 2px 8px rgba(201,168,76,.25);}
 .logosub{font-family:monospace;font-size:10px;color:#7a9e8a;letter-spacing:5px;text-transform:uppercase;text-align:center;margin-top:4px;margin-bottom:28px;}
 .panel{background:rgba(255,255,255,.05);border:1px solid rgba(201,168,76,.22);border-radius:18px;padding:22px 18px;width:100%;max-width:400px;}
-.ptitle{font-family:monospace;font-size:10px;letter-spacing:4px;text-transform:uppercase;color:#c9a84c;margin-bottom:16px;}
+.ptitle{font-family:monospace;font-size:10px;letter-spacing:5px;text-transform:uppercase;color:#c9a84c;margin-bottom:16px;font-weight:700;}
 .fg{margin-bottom:13px;}
 .fg label{display:block;font-size:12px;color:#7a9e8a;margin-bottom:5px;}
 .fg input,.fg select{width:100%;background:rgba(0,0,0,.4);border:1px solid rgba(201,168,76,.2);border-radius:10px;padding:13px 14px;color:#ece7df;font-family:'Helvetica Neue',Arial,sans-serif;font-size:16px;outline:none;-webkit-appearance:none;appearance:none;}
@@ -32,7 +32,8 @@ html,body{height:100%;overflow:hidden;background:#040804;font-family:'Helvetica 
 .fg select option{background:#1a3a2a;}
 .btn{display:block;width:100%;padding:15px;border:none;border-radius:11px;font-family:'Helvetica Neue',Arial,sans-serif;font-size:16px;font-weight:600;cursor:pointer;text-align:center;-webkit-appearance:none;}
 .btn:active{opacity:.8;}
-.btngold{background:linear-gradient(135deg,#c9a84c,#9a7a2e);color:#0d0d0d;}
+.btngold{background:linear-gradient(145deg,#d4b05a 0%,#c9a84c 40%,#a8882e 100%);color:#0d0d0d;box-shadow:0 2px 6px rgba(201,168,76,.3),inset 0 1px 0 rgba(255,255,255,.2);}
+.btngold:active{box-shadow:inset 0 2px 4px rgba(0,0,0,.2);-webkit-transform:translateY(1px);transform:translateY(1px);}
 .btnout{background:transparent;border:1px solid rgba(201,168,76,.35);color:#c9a84c;margin-top:9px;}
 .divider{display:-webkit-flex;display:flex;-webkit-align-items:center;align-items:center;gap:12px;margin:14px 0;color:#7a9e8a;font-size:12px;}
 .divider::before,.divider::after{content:'';-webkit-flex:1;flex:1;height:1px;background:rgba(201,168,76,.15);}
@@ -41,7 +42,7 @@ html,body{height:100%;overflow:hidden;background:#040804;font-family:'Helvetica 
 /* ── WAITING ROOM ── */
 #sWait{background:radial-gradient(ellipse at 50% 0%,#1f4433,#040804 80%);padding:24px 16px 60px;gap:12px;}
 .rcwrap{text-align:center;}
-.rclbl{font-family:monospace;font-size:10px;letter-spacing:4px;text-transform:uppercase;color:#7a9e8a;margin-bottom:6px;}
+.rclbl{font-family:monospace;font-size:10px;letter-spacing:5px;text-transform:uppercase;color:#7a9e8a;margin-bottom:6px;font-weight:700;}
 .rcval{font-family:monospace;font-size:38px;color:#c9a84c;letter-spacing:12px;font-weight:500;}
 .rchint{font-size:12px;color:#7a9e8a;margin-top:4px;}
 .plist{background:rgba(255,255,255,.04);border:1px solid rgba(201,168,76,.12);border-radius:14px;overflow:hidden;}
@@ -55,7 +56,7 @@ html,body{height:100%;overflow:hidden;background:#040804;font-family:'Helvetica 
 .bbadge{font-size:10px;background:rgba(44,82,129,.4);color:#90cdf4;padding:2px 7px;border-radius:20px;font-family:monospace;}
 .chipct{font-family:monospace;font-size:13px;color:#c9a84c;}
 .hbox{background:rgba(255,255,255,.04);border:1px solid rgba(201,168,76,.18);border-radius:14px;padding:16px;}
-.hboxtitle{font-family:monospace;font-size:10px;letter-spacing:3px;text-transform:uppercase;color:#c9a84c;margin-bottom:12px;}
+.hboxtitle{font-family:monospace;font-size:10px;letter-spacing:4px;text-transform:uppercase;color:#c9a84c;margin-bottom:12px;font-weight:700;}
 .hrow{display:-webkit-flex;display:flex;gap:8px;margin-bottom:10px;-webkit-align-items:center;align-items:center;}
 .hrow input,.hrow select{-webkit-flex:1;flex:1;background:rgba(0,0,0,.4);border:1px solid rgba(201,168,76,.18);border-radius:9px;padding:11px 12px;color:#ece7df;font-family:'Helvetica Neue',Arial,sans-serif;font-size:15px;outline:none;-webkit-appearance:none;}
 .hrow select option{background:#1a3a2a;}
@@ -81,7 +82,7 @@ html,body{height:100%;overflow:hidden;background:#040804;font-family:'Helvetica 
   -webkit-transform:translate(-50%,-50%);transform:translate(-50%,-50%);
   width:calc(100% - 24px);height:calc(100% - 24px);
   border-radius:50%;
-  background:radial-gradient(ellipse at 50% 40%,#245932,#1c4a2e 55%,#163d24 100%);
+  background:radial-gradient(ellipse at 50% 35%,#2a6638 0%,#1f5430 40%,#1a4828 70%,#153d22 100%);
   overflow:hidden;
 }
 #feltInner::after{
@@ -108,7 +109,7 @@ html,body{height:100%;overflow:hidden;background:#040804;font-family:'Helvetica 
 #sidePotRow{font-family:monospace;font-size:9px;color:rgba(201,168,76,.6);min-height:12px;margin-top:2px;}
 
 /* ── CARDS ── */
-.card{background:#faf7ee;border-radius:5px;border:1px solid rgba(0,0,0,.13);position:relative;display:-webkit-inline-flex;display:inline-flex;-webkit-align-items:center;align-items:center;-webkit-justify-content:center;justify-content:center;-webkit-flex-shrink:0;flex-shrink:0;box-shadow:0 2px 5px rgba(0,0,0,.4);}
+.card{background:linear-gradient(160deg,#fffef8 0%,#f5f1e4 60%,#ede8d8 100%);border-radius:5px;border:1px solid rgba(0,0,0,.18);position:relative;display:-webkit-inline-flex;display:inline-flex;-webkit-align-items:center;align-items:center;-webkit-justify-content:center;justify-content:center;-webkit-flex-shrink:0;flex-shrink:0;box-shadow:0 3px 8px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.9),inset 0 -1px 0 rgba(0,0,0,.06);}
 .card .cr{font-family:Georgia,serif;font-weight:bold;line-height:1;position:absolute;top:4px;left:5px;}
 .card .cs{line-height:1;}
 .card .crb{font-family:Georgia,serif;font-weight:bold;line-height:1;position:absolute;bottom:4px;right:5px;-webkit-transform:rotate(180deg);transform:rotate(180deg);}
@@ -132,8 +133,8 @@ html,body{height:100%;overflow:hidden;background:#040804;font-family:'Helvetica 
 .cardph.my{width:52px;height:74px;}
 
 /* ── CHIPS ── */
-.chip{width:15px;height:15px;border-radius:50%;border:2.5px solid rgba(255,255,255,.28);box-sizing:border-box;-webkit-flex-shrink:0;flex-shrink:0;position:relative;display:inline-block;}
-.chip::after{content:'';position:absolute;inset:2px;border-radius:50%;border:1px solid rgba(255,255,255,.14);}
+.chip{width:15px;height:15px;border-radius:50%;border:2.5px solid rgba(255,255,255,.28);box-sizing:border-box;-webkit-flex-shrink:0;flex-shrink:0;position:relative;display:inline-block;box-shadow:inset 0 1px 2px rgba(255,255,255,.35),inset 0 -1px 2px rgba(0,0,0,.3),0 1px 3px rgba(0,0,0,.4);}
+.chip::after{content:'';position:absolute;inset:2px;border-radius:50%;border:1px solid rgba(255,255,255,.14);background:radial-gradient(circle at 38% 30%,rgba(255,255,255,.32) 0%,transparent 65%);}
 .chip.c500{background:#7b3fa8;}
 .chip.c100{background:#344a60;}
 .chip.c25{background:#27a85e;}
@@ -143,7 +144,7 @@ html,body{height:100%;overflow:hidden;background:#040804;font-family:'Helvetica 
 /* ── SEAT BOXES ── */
 .seat{position:absolute;z-index:20;display:-webkit-flex;display:flex;-webkit-flex-direction:column;flex-direction:column;-webkit-align-items:center;align-items:center;pointer-events:none;}
 .seat-box{background:rgba(0,0,0,.8);border:1.5px solid rgba(255,255,255,.1);border-radius:10px;padding:6px 10px;display:-webkit-flex;display:flex;-webkit-align-items:center;align-items:center;gap:8px;min-width:130px;-webkit-transition:border-color .3s,background .3s;transition:border-color .3s,background .3s;}
-.seat-box.active{border-color:#c9a84c;background:rgba(201,168,76,.12);}
+.seat-box.active{border:2.5px solid #c9a84c;background:rgba(201,168,76,.14);box-shadow:0 0 8px rgba(201,168,76,.22);}
 .seat-box.folded{opacity:.3;}
 .seat-left{-webkit-flex:1;flex:1;}
 .seat-name{font-size:11px;font-weight:700;color:#ece7df;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:72px;}
@@ -162,12 +163,12 @@ html,body{height:100%;overflow:hidden;background:#040804;font-family:'Helvetica 
 .seat-betzone{display:-webkit-flex;display:flex;gap:0;-webkit-align-items:center;align-items:center;min-height:16px;}
 
 /* ── ACTIVE SEAT PULSE ── */
-@-webkit-keyframes seatP{0%,100%{border-color:rgba(201,168,76,.35);background:rgba(201,168,76,.08);}50%{border-color:rgba(201,168,76,1);background:rgba(201,168,76,.24);}}
-@keyframes seatP{0%,100%{border-color:rgba(201,168,76,.35);background:rgba(201,168,76,.08);}50%{border-color:rgba(201,168,76,1);background:rgba(201,168,76,.24);}}
-@-webkit-keyframes cardP{0%,100%{background:rgba(201,168,76,0);}50%{background:rgba(201,168,76,.18);}}
-@keyframes cardP{0%,100%{background:rgba(201,168,76,0);}50%{background:rgba(201,168,76,.18);}}
-@-webkit-keyframes seatPR{0%,100%{border-color:rgba(192,57,43,.4);background:rgba(192,57,43,.08);}50%{border-color:rgba(231,76,60,1);background:rgba(192,57,43,.28);}}
-@keyframes seatPR{0%,100%{border-color:rgba(192,57,43,.4);background:rgba(192,57,43,.08);}50%{border-color:rgba(231,76,60,1);background:rgba(192,57,43,.28);}}
+@-webkit-keyframes seatP{0%,100%{border-color:rgba(201,168,76,.4);background:rgba(201,168,76,.08);box-shadow:0 0 4px rgba(201,168,76,.1);}50%{border-color:rgba(201,168,76,1);background:rgba(201,168,76,.26);box-shadow:0 0 12px rgba(201,168,76,.45);}}
+@keyframes seatP{0%,100%{border-color:rgba(201,168,76,.4);background:rgba(201,168,76,.08);box-shadow:0 0 4px rgba(201,168,76,.1);}50%{border-color:rgba(201,168,76,1);background:rgba(201,168,76,.26);box-shadow:0 0 12px rgba(201,168,76,.45);}}
+@-webkit-keyframes cardP{0%,100%{background:rgba(201,168,76,0);}50%{background:rgba(201,168,76,.28);}}
+@keyframes cardP{0%,100%{background:rgba(201,168,76,0);}50%{background:rgba(201,168,76,.28);}}
+@-webkit-keyframes seatPR{0%,100%{border-color:rgba(192,57,43,.45);background:rgba(192,57,43,.08);box-shadow:0 0 4px rgba(192,57,43,.1);}50%{border-color:rgba(231,76,60,1);background:rgba(192,57,43,.32);box-shadow:0 0 14px rgba(231,76,60,.5);}}
+@keyframes seatPR{0%,100%{border-color:rgba(192,57,43,.45);background:rgba(192,57,43,.08);box-shadow:0 0 4px rgba(192,57,43,.1);}50%{border-color:rgba(231,76,60,1);background:rgba(192,57,43,.32);box-shadow:0 0 14px rgba(231,76,60,.5);}}
 @-webkit-keyframes cardPR{0%,100%{background:rgba(192,57,43,0);}50%{background:rgba(192,57,43,.22);}}
 @keyframes cardPR{0%,100%{background:rgba(192,57,43,0);}50%{background:rgba(192,57,43,.22);}}
 .seat-pulse{-webkit-animation:seatP 1.4s ease-in-out infinite;animation:seatP 1.4s ease-in-out infinite;}
@@ -271,8 +272,9 @@ html,body{height:100%;overflow:hidden;background:#040804;font-family:'Helvetica 
 .modal-btns .btn{width:140px;}
 
 /* ── ACTION LOG ── */
-#actionLog{position:absolute;left:50%;top:14%;-webkit-transform:translateX(-50%);transform:translateX(-50%);z-index:15;text-align:center;pointer-events:none;background:rgba(0,0,0,0.58);border:1px solid rgba(201,168,76,0.35);border-radius:20px;padding:4px 18px;white-space:nowrap;min-width:140px;max-width:75%;}
-.log-entry{font-family:Georgia,serif;font-size:11px;color:rgba(255,215,120,0.92);letter-spacing:0.5px;font-style:italic;}
+#actionLog{position:absolute;left:50%;top:14%;-webkit-transform:translateX(-50%);transform:translateX(-50%);z-index:15;text-align:center;pointer-events:none;background:rgba(0,0,0,0.68);border:1px solid rgba(201,168,76,0.42);border-radius:20px;padding:5px 18px;white-space:nowrap;min-width:140px;max-width:75%;}
+.log-entry{font-family:Georgia,serif;font-size:13px;color:rgba(255,220,110,0.96);letter-spacing:0.5px;font-style:italic;}
+.log-entry-dim{font-family:Georgia,serif;font-size:12px;color:rgba(255,210,100,0.46);letter-spacing:0.5px;font-style:italic;}
 
 /* ── PAUSE OVERLAY ── */
 #pauseOverlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:150;display:none;-webkit-align-items:center;align-items:center;-webkit-justify-content:center;justify-content:center;pointer-events:none;}
@@ -695,7 +697,8 @@ function cmpTie(a,b) {
 var BOT_NAMES = ['Maverick','Doc Holiday','Lucky Luke','Calamity','Sundance','Poker Alice','Wild Bill','Wyatt'];
 
 function botDecide(pid, g, player, settings) {
-  var diff = settings.botDiff || 'medium';
+  // Persona assigned at seating; default TP for backwards compat with old games
+  var persona = player.persona || 'TP';
   var hand = safeObj(g.hands)[pid] || [];
   var comm = (g.community||[]).slice(0, g.communityRevealed||0);
   var all = hand.concat(comm);
@@ -705,6 +708,8 @@ function botDecide(pid, g, player, settings) {
   var pot = g.pot||0;
   var chips = player.chips;
   var bb = settings.bigBlind||50;
+
+  // Raw hand strength 0..1
   var strength = 0;
   if (hand.length===2) {
     var r1=rankVal(hand[0].r),r2=rankVal(hand[1].r);
@@ -713,28 +718,73 @@ function botDecide(pid, g, player, settings) {
     strength = Math.min(strength,1);
   }
   if (sc) strength = sc.rank/9;
-  var bluffRate = diff==='easy'?0.05:diff==='medium'?0.1:0.18;
-  var bluff = Math.random()<bluffRate;
-  var eff = bluff?Math.min(strength+0.25,1):strength;
-  var potOdds = toCall>0?toCall/(pot+toCall):0;
-  var betThresh  = diff==='easy'?0.7 :diff==='medium'?0.55:0.45;
-  var callThresh = diff==='easy'?0.15:diff==='medium'?0.1 :0.05;
-  var raiseThresh= diff==='easy'?0.8 :diff==='medium'?0.7 :0.6;
-  if (toCall===0) {
-    if (eff>betThresh) {
-      var betSize = Math.floor(pot*(0.4+eff*0.5));
-      betSize = Math.max(bb, Math.min(betSize, Math.floor(chips*0.5)));
-      return {action:'bet',amount:myBet+betSize};
+
+  // Per-persona constants
+  // betThresh:  min strength to open-bet/raise when no one has bet
+  // callThresh: min strength (above pot odds) to call
+  // raiseThresh: min strength to re-raise instead of flat-call
+  // bluffRate:  probability of adding bluff bonus (cap 0.25)
+  // betSizeMult: multiplier on pot when sizing bets
+  // maxStackPct: max fraction of stack to put in voluntarily
+  var betThresh, callThresh, raiseThresh, bluffRate, betSizeMult, maxStackPct;
+  if (persona === 'TAG') {
+    betThresh   = 0.55;
+    callThresh  = 0.12;
+    raiseThresh = 0.70;
+    bluffRate   = 0.07;
+    betSizeMult = 0.75;
+    maxStackPct = 0.55;
+  } else if (persona === 'LAG') {
+    betThresh   = 0.35;
+    callThresh  = 0.06;
+    raiseThresh = 0.55;
+    bluffRate   = 0.22;
+    betSizeMult = 0.85;
+    maxStackPct = 0.65;
+  } else if (persona === 'TP') {
+    betThresh   = 0.68;
+    callThresh  = 0.18;
+    raiseThresh = 0.82;
+    bluffRate   = 0.04;
+    betSizeMult = 0.55;
+    maxStackPct = 0.40;
+  } else {
+    // LP — calling station: wide range, passive, rarely folds single bet
+    betThresh   = 0.72;
+    callThresh  = 0.04;
+    raiseThresh = 0.88;
+    bluffRate   = 0.06;
+    betSizeMult = 0.50;
+    maxStackPct = 0.45;
+  }
+
+  var bluff = Math.random() < bluffRate;
+  var eff = bluff ? Math.min(strength + 0.22, 1) : strength;
+  var potOdds = toCall > 0 ? toCall / (pot + toCall) : 0;
+
+  // LP folds to large multi-street pressure even with wide calling range
+  // "large pressure" = toCall > 30% of remaining chips
+  var pressured = (toCall > 0) && (toCall > chips * 0.30);
+  var lpFoldThresh = pressured ? 0.28 : callThresh;
+  var effectiveCallThresh = (persona === 'LP') ? lpFoldThresh : callThresh;
+
+  if (toCall === 0) {
+    // No bet facing — check or open-bet
+    if (eff > betThresh) {
+      var betSize = Math.floor(pot * (betSizeMult + eff * 0.3));
+      betSize = Math.max(bb, Math.min(betSize, Math.floor(chips * maxStackPct)));
+      return {action:'bet', amount:myBet + betSize};
     }
     return {action:'check'};
   } else {
-    if (eff>potOdds+callThresh||bluff) {
-      if (eff>raiseThresh&&chips>toCall*3) {
-        var raiseSize = Math.max(toCall*2,Math.floor(pot*eff*0.6));
-        raiseSize = Math.min(raiseSize,Math.floor(chips*0.5));
-        return {action:'bet',amount:myBet+raiseSize};
+    // Facing a bet — fold, call, or raise
+    if (eff > potOdds + effectiveCallThresh || bluff) {
+      if (eff > raiseThresh && chips > toCall * 3) {
+        var raiseSize = Math.max(toCall * 2, Math.floor(pot * eff * betSizeMult));
+        raiseSize = Math.min(raiseSize, Math.floor(chips * maxStackPct));
+        return {action:'bet', amount:myBet + raiseSize};
       }
-      return {action:'call',callAmt:Math.min(toCall,chips)};
+      return {action:'call', callAmt:Math.min(toCall, chips)};
     }
     return {action:'fold'};
   }
@@ -898,11 +948,13 @@ function doCreate() {
   myName = name; myId = uid(); isHost = true; roomCode = genCode();
   try { localStorage.setItem('tmwpoker_name',name); } catch(e) {}
   var botPool = shuffle(BOT_NAMES.slice()).slice(0,bots);
+  var personas = ['TAG','LAG','TP','LP'];
   var players = {};
   players[myId] = {name:name,chips:chips,id:myId,seat:0,isBot:false,connected:true};
   for (var i = 0; i < botPool.length; i++) {
     var bid = 'bot'+uid();
-    players[bid] = {name:botPool[i],chips:chips,id:bid,seat:i+1,isBot:true,connected:true};
+    var persona = personas[Math.floor(Math.random() * personas.length)];
+    players[bid] = {name:botPool[i],chips:chips,id:bid,seat:i+1,isBot:true,persona:persona,connected:true};
   }
   var roomData = {
     host:myId,
@@ -986,9 +1038,11 @@ function hSetBots() {
     else seat = Math.max(seat,ps[i].seat+1);
   }
   var names = shuffle(BOT_NAMES.slice()).slice(0,bots);
+  var personas2 = ['TAG','LAG','TP','LP'];
   for (var i = 0; i < names.length; i++) {
     var bid = 'bot'+uid();
-    ups['rooms/'+roomCode+'/players/'+bid] = {name:names[i],chips:gs.settings.startingChips,id:bid,seat:seat+i,isBot:true,connected:true};
+    var persona2 = personas2[Math.floor(Math.random() * personas2.length)];
+    ups['rooms/'+roomCode+'/players/'+bid] = {name:names[i],chips:gs.settings.startingChips,id:bid,seat:seat+i,isBot:true,persona:persona2,connected:true};
   }
   db.ref().update(ups);
 }
@@ -1532,7 +1586,12 @@ function renderLog() {
   }
   var entries = gs.actionLog;
   var last = entries[entries.length - 1];
-  logEl.innerHTML = '<div class="log-entry">' + last + '</div>';
+  var html = '<div class="log-entry">' + last + '</div>';
+  if (entries.length >= 2) {
+    var prev = entries[entries.length - 2];
+    html += '<div class="log-entry-dim">' + prev + '</div>';
+  }
+  logEl.innerHTML = html;
 }
 
 // ── Player Actions ────────────────────────────────────────────
