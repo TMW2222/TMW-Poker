@@ -1488,11 +1488,10 @@ function renderControls(g, ps, settings) {
   var toCall = Math.max(0,(g.currentBet||0)-myBet);
   var bb = settings&&settings.bigBlind?settings.bigBlind:50;
 
-  // Quick bet buttons scale with buy-in
-  var buyIn = settings&&settings.startingChips?settings.startingChips:2000;
-  var q1 = Math.round(buyIn*0.025/5)*5||5;
-  var q2 = Math.round(buyIn*0.05/5)*5||10;
-  var q3 = Math.round(buyIn*0.1/5)*5||20;
+  // Quick bet buttons scale with big blind (2bb / 4bb / 8bb)
+  var q1 = bb*2;
+  var q2 = bb*4;
+  var q3 = bb*8;
   el('qb1').textContent = q1.toLocaleString();
   el('qb2').textContent = q2.toLocaleString();
   el('qb3').textContent = q3.toLocaleString();
