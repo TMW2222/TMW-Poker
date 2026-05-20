@@ -1497,9 +1497,17 @@ function renderControls(g, ps, settings) {
   el('qb3').textContent = q3.toLocaleString();
 
   if (myTurn&&!fold&&!ain&&g.stage!=='complete') {
+    var allIn2 = safeObj(g.allIn);
+    var ao2 = g.actionOrder||[];
+    var allOthersAllIn = true;
+    for (var i = 0; i < ao2.length; i++) {
+      if (ao2[i] !== myId && !safeObj(g.folded)[ao2[i]] && !allIn2[ao2[i]]) {
+        allOthersAllIn = false; break;
+      }
+    }
     el('bFold').disabled = false;
     el('bCall').disabled = false;
-    el('bBet').disabled  = false;
+    el('bBet').disabled  = allOthersAllIn;
     el('bCall').textContent = toCall>0?'Call '+toCall.toLocaleString():'Check';
     el('bBet').textContent  = g.currentBet>0?'Raise':'Bet';
     el('gToCall').textContent = toCall>0?toCall.toLocaleString():'';
@@ -1716,6 +1724,35 @@ function applyAction(pid, action) {
       });
 
     } else if (action.type === 'bet') {
+      // Guard: if all other active players are all-in, no raise is possible
+      // Convert the bet to a call instead to prevent stuck state
+      var allIn2 = safeObj(g.allIn);
+      var folded2 = safeObj(g.folded);
+      var allOthersAllIn2 = true;
+      for (var i = 0; i < ao.length; i++) {
+        if (ao[i] !== pid && !folded2[ao[i]] && !allIn2[ao[i]]) {
+          allOthersAllIn2 = false; break;
+        }
+      }
+      if (allOthersAllIn2) {
+        var callAmt2 = Math.min(toCall, player.chips);
+        var logTxt3 = callAmt2 > 0 ? player.name + ' calls ' + callAmt2.toLocaleString() : player.name + ' checks';
+        var callUps = {};
+        if (callAmt2 > 0) {
+          callUps['rooms/'+roomCode+'/game/bets/'+pid]        = myBet + callAmt2;
+          callUps['rooms/'+roomCode+'/game/pot']              = (g.pot||0) + callAmt2;
+          callUps['rooms/'+roomCode+'/players/'+pid+'/chips'] = player.chips - callAmt2;
+          if (player.chips - callAmt2 === 0)
+            callUps['rooms/'+roomCode+'/game/allIn/'+pid] = true;
+        }
+        db.ref().update(callUps).then(function() {
+          pushLog(logTxt3);
+          db.ref('rooms/'+roomCode).once('value').then(function(s2) {
+            if (s2.exists()) advanceHand(s2.val(), pid);
+          });
+        });
+        return;
+      }
       var total    = action.amount || 0;
       var add      = Math.min(total - myBet, player.chips);
       if (add <= 0) {
