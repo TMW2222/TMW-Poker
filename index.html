@@ -334,6 +334,28 @@ td.pos{color:#5fd38d!important;} td.neg{color:#e74c3c!important;}
 .hp-board{display:-webkit-flex;display:flex;gap:4px;margin:4px 0;}
 .hp-cards{white-space:nowrap;} .hp-cards .card{margin-right:2px;}
 .hp-log{font-family:monospace;font-size:11px;color:#b9c4bb;line-height:1.6;}
+
+/* ===== layout: pot (top) -> board -> action line -> my cards (bottom) ===== */
+#potZone{top:8%;display:-webkit-flex;display:flex;-webkit-align-items:center;align-items:center;-webkit-justify-content:center;justify-content:center;-webkit-flex-wrap:wrap;flex-wrap:wrap;gap:6px;background:rgba(0,0,0,.45);border:1px solid rgba(201,168,76,.25);border-radius:14px;padding:2px 12px;white-space:nowrap;}
+#potZone #stageLbl{position:static;-webkit-transform:none;transform:none;font-size:8px;letter-spacing:2px;color:rgba(255,255,255,.45);}
+#potChipRow{margin-bottom:0;min-height:0;}
+#potLbl{font-size:8px;letter-spacing:2px;color:rgba(255,255,255,.45);}
+#potVal{font-size:17px;line-height:1.3;}
+#sidePotRow{-webkit-flex-basis:100%;flex-basis:100%;min-height:0;margin-top:0;text-align:center;}
+#sidePotRow:empty{display:none;}
+#commZone{top:24%;}
+@media (max-height:340px){#commZone{top:22%;}#potZone{top:7%;}}
+#mySeat #actionLog{position:static;-webkit-transform:none;transform:none;margin:0 0 5px;padding:3px 14px;min-width:0;max-width:330px;overflow:hidden;}
+#actionLog .log-entry{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+#actionLog .log-tail{color:rgba(255,210,100,.55);}
+#actionLog .log-win{color:#ffd76a;font-weight:700;font-style:normal;}
+#actionLog .log-entry-dim{font-size:10px;font-style:normal;font-family:monospace;letter-spacing:1px;}
+#resultBanner{display:none!important;}
+#betSec .quickbets button{padding:6px 1px;white-space:nowrap;font-size:9px;}
+#betSec .raiserow #betSlider{height:24px;margin:0;padding:0;background:transparent;border:none;-webkit-appearance:auto;appearance:auto;}
+#potZone.over #potLbl,#potZone.over #potVal,#potZone.over #potChipRow{display:none;}
+#betSec .raiserow input#betAmt{width:62px;}
+#betSec .raiserow #betSlider{-webkit-flex:1;flex:1;min-width:0;accent-color:#c9a84c;}
 </style>
 </head>
 <body>
@@ -427,21 +449,21 @@ td.pos{color:#5fd38d!important;} td.neg{color:#e74c3c!important;}
       <div class="felt-suit" style="bottom:12%;left:14%;color:rgba(140,20,20,.08);">&#9830;</div>
       <div class="felt-suit" style="bottom:12%;right:14%;color:rgba(0,0,0,.06);">&#9827;</div>
     </div></div>
-    <div id="stageLbl">PRE-FLOP</div>
     <div id="blindsLbl">25/50</div>
     <div id="commZone"><div id="commCards"></div></div>
     <div id="potZone">
+      <div id="stageLbl">PRE-FLOP</div>
       <div id="potChipRow"></div>
       <div id="potLbl">POT</div>
       <div id="potVal">0</div>
       <div id="sidePotRow"></div>
     </div>
-    <div id="actionLog"></div>
     <div id="resultBanner"><div id="rbMain"></div><div id="rbSub"></div><div id="rbCount"></div></div>
     <div id="topLeft"><button id="btnHistory">&#9776; History</button><button id="btnSitOut">Sit out</button></div>
     <div id="seatContainer"></div>
     <div id="pauseOverlay"><p>PAUSED</p></div>
     <div id="mySeat">
+      <div id="actionLog"></div>
       <div id="myBetZone"></div>
       <div id="myCardsWrap"></div>
       <div id="handStr"></div>
@@ -469,17 +491,15 @@ td.pos{color:#5fd38d!important;} td.neg{color:#e74c3c!important;}
     </div>
     <div class="quickbets">
       <button id="qb3">Min</button>
-      <button id="qb1">&frac12; Pot</button>
-      <button id="qb2">&#8532; Pot</button>
+      <button id="qb1">&frac12;</button>
+      <button id="qb2">&#8532;</button>
+      <button class="preset" id="pPot">Pot</button>
+      <button class="preset" id="pAll">All in</button>
     </div>
     <div class="raiserow">
-      <input id="betAmt" type="number" placeholder="Amount" min="0" inputmode="numeric">
-      <div class="presets">
-        <button class="preset" id="pPot">Pot</button>
-        <button class="preset" id="pAll">All In</button>
-      </div>
+      <input id="betAmt" type="number" placeholder="Amt" min="0" inputmode="numeric">
+      <input id="betSlider" type="range" min="0" max="100" step="1" value="0">
     </div>
-    <div class="slider-row"><input id="betSlider" type="range" min="0" max="100" step="1" value="0"></div>
   </div>
   <div id="hostBar" class="hid">
     <button class="bt btghost" id="btnAddTog">+$</button>
@@ -1119,7 +1139,7 @@ function animatePotToWinners(g) {
 }
 
 // ── Seats / orientation ─────────────────────────────────────────
-var SEAT_ANGLES = { 1: [270], 2: [270, 90], 3: [270, 0, 90], 4: [240, 300, 60, 120], 5: [225, 270, 315, 45, 90], 6: [210, 258, 306, 54, 102, 150], 7: [210, 247, 284, 321, 39, 78, 150] };
+var SEAT_ANGLES = { 1: [270], 2: [270, 90], 3: [255, 315, 45], 4: [240, 300, 60, 120], 5: [225, 270, 315, 45, 90], 6: [210, 258, 306, 54, 102, 150], 7: [210, 247, 284, 321, 39, 78, 150] };
 function getSeatPositions(n) {
   var a = SEAT_ANGLES[n] || SEAT_ANGLES[7], pos = [];
   for (var i = 0; i < n; i++) { var r = (a[i] - 90) * Math.PI / 180; pos.push({ x: 50 + 35 * Math.cos(r), y: 50 + 33 * Math.sin(r) }); }
@@ -1534,6 +1554,7 @@ function render() {
   el('gStage').textContent = stageName; el('stageLbl').textContent = stageName;
   el('blindsLbl').textContent = st.smallBlind + '/' + st.bigBlind;
   el('potVal').textContent = fmt(g.pot);
+  if (g.stage === 'complete') el('potZone').classList.add('over'); else el('potZone').classList.remove('over');
   el('potChipRow').innerHTML = chipRowHTML(g.pot, 8);
   var spTxt = '';
   if (g.stage === 'complete' && g.result && g.result.pots && g.result.pots.length > 1)
@@ -1696,23 +1717,17 @@ function renderControls(g) {
     el('gToCall').textContent = why;
   }
 }
-function renderResult(g) {
-  var rb = el('resultBanner');
-  if (g.stage !== 'complete' || !g.result) { rb.style.display = 'none'; return; }
-  var r = g.result, main = '', sub = '';
-  if (r.type === 'aborted') main = 'Hand cancelled \u2014 bets returned';
-  else if (r.winners.length > 1) {
-    main = 'Split pot';
-    for (var i = 0; i < r.winners.length; i++) sub += (i ? ' \u00b7 ' : '') + esc(r.winners[i].name) + ' +' + fmt(r.winners[i].amount);
-    if (r.type === 'showdown') sub += '<br>' + esc(r.winners[0].hand);
-  } else if (r.winners.length) {
-    main = esc(r.winners[0].name) + ' wins ' + fmt(r.winners[0].amount);
-    sub = r.type === 'showdown' ? esc(r.winners[0].hand) : 'Everyone else folded';
-  }
-  el('rbMain').innerHTML = main; el('rbSub').innerHTML = sub;
-  el('rbCount').textContent = nextHandText(g);
-  rb.style.display = 'block';
-  scheduleTick();
+function renderResult(g) {           // shown in the action line above my cards (see renderLog)
+  el('resultBanner').style.display = 'none';
+  if (g.stage === 'complete' && g.result) scheduleTick();
+}
+function resultText(g) {
+  var r = g.result, ws = r.winners || [], t = '';
+  if (r.type === 'aborted') return 'Hand cancelled \u2014 bets returned';
+  if (ws.length > 1) { t = 'Split pot: '; for (var i = 0; i < ws.length; i++) t += (i ? ', ' : '') + ws[i].name + ' +' + fmt(ws[i].amount); }
+  else if (ws.length) t = ws[0].name + ' wins ' + fmt(ws[0].amount);
+  if (r.type === 'showdown' && ws.length) t += ' \u2014 ' + ws[0].hand;
+  return t;
 }
 function nextHandText(g) {
   if (gs.status === 'paused') return 'Paused';
@@ -1726,7 +1741,7 @@ function scheduleTick() {
   tickTimer = setTimeout(function () {
     tickTimer = null;
     var g = G();
-    if (g && g.stage === 'complete' && g.result) { el('rbCount').textContent = nextHandText(g); if (!g.waiting) scheduleTick(); }
+    if (g && g.stage === 'complete' && g.result) { renderLog(g); if (!g.waiting) scheduleTick(); }
   }, 1000);
 }
 function renderRebuy(g) {
@@ -1764,12 +1779,15 @@ function renderHostBar() {
   } else ap.style.display = 'none';
 }
 function renderLog(g) {
-  var L = g.log || [], html = '';
-  var cur = PL(currentActor(g));
-  var last = L.length ? L[L.length - 1] : '';
-  html = '<div class="log-entry">' + esc(last || '\u200B') + '</div>';
-  if (cur && g.stage !== 'complete' && !g.runout) html += '<div class="log-entry-dim">Action on ' + esc(cur.name) + '</div>';
-  else if (L.length > 1) html += '<div class="log-entry-dim">' + esc(L[L.length - 2]) + '</div>';
+  var L = g.log || [], html;
+  if (g.stage === 'complete' && g.result) {
+    html = '<div class="log-entry log-win">' + esc(resultText(g)) + '</div><div class="log-entry-dim">' + esc(nextHandText(g)) + '</div>';
+  } else {
+    var last = L.length ? L[L.length - 1] : '', cur = currentActor(g), tail = '';
+    if (cur && !g.runout) tail = cur === myId ? 'your turn' : 'action on ' + ((PL(cur) || {}).name || '');
+    else if (g.runout) tail = 'running it out';
+    html = '<div class="log-entry">' + esc(last) + (tail ? '<span class="log-tail"> \u00b7 ' + esc(tail) + '</span>' : '') + '</div>';
+  }
   el('actionLog').innerHTML = html;
 }
 function standingsHTML() {
